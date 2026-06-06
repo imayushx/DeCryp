@@ -4,10 +4,12 @@ export const maxDuration = 60;
 import { fetchABI, fetchTransaction, fetchTokenInfo, fetchEthPrice } from "@/lib/etherscan";
 import { decodeCalldata, detectInputType } from "@/lib/decoder";
 import { getProtocolName } from "@/lib/protocols";
-import { explainTransaction } from "@/lib/ai";
+import { analyzeBeforeSigning, decodeCompletedTransaction } from "@/lib/ai";
+import type { PreSignExplanation, PostSignExplanation } from "@/lib/ai";
 
-// Hardcoded demo result for "Try Example" button
+// Demo result for "Try Example" — pre-sign mode, Uniswap V3 swap
 const DEMO_RESULT = {
+  mode: "pre-sign" as const,
   decoded: {
     method: "exactInputSingle",
     params: {
@@ -26,19 +28,20 @@ const DEMO_RESULT = {
     valueUsd: "0.00",
   },
   explanation: {
+    mode: "pre-sign" as const,
     action: "Swap 1,000 USDC for approximately 0.38 ETH on Uniswap V3.",
     in_plain_english:
-      "You are trading 1,000 USDC (a dollar-pegged coin) for roughly 0.38 ETH (Ethereum's native currency) through Uniswap, a popular decentralized exchange. The exchange rate is automatically set by a smart contract based on current market prices. You will receive at least 0.38 ETH — if the price moves too much before your trade goes through, it cancels automatically to protect you.",
+      "You are trading 1,000 USDC (a dollar-pegged coin) for roughly 0.38 ETH through Uniswap, a popular decentralized exchange. The rate is set automatically by a smart contract. You will receive at least 0.38 ETH — if the price moves too much before your trade goes through, it cancels automatically to protect you.",
     what_you_lose: "1,000 USDC + ~$3–8 in gas fees",
     what_you_get: "~0.38 ETH (minimum guaranteed)",
     gas_cost: "~$4.50",
-    risk_level: "LOW",
+    risk_level: "LOW" as const,
     risk_reason: "Uniswap V3 is a battle-tested, fully verified protocol used by millions of people daily.",
-    contract_trust: "VERIFIED",
+    contract_trust: "VERIFIED" as const,
     red_flags: [],
     should_sign: true,
-    one_liner: "Trading 1,000 USDC for ETH on Uniswap — looks safe.",
-  },
+    one_liner: "Swapping 1,000 USDC for ETH on Uniswap — looks safe.",
+  } as PreSignExplanation,
   raw: {
     calldata: "0x414bf389...",
     to: "0xE592427A0AEce92De3Edee1F18E0157C05861564",
@@ -46,13 +49,55 @@ const DEMO_RESULT = {
   },
 };
 
+type Mode = "pre-sign" | "post-sign";
+
+function preSignFallback(
+  decoded: { valueEth: string; valueUsd: string },
+  verified: boolean
+): PreSignExplanation {
+  return {
+    action: "Transaction decoded but AI explanation unavailable.",
+    in_plain_english:
+      "We decoded the transaction data but couldn't generate a plain English explanation right now. Review the raw details below carefully.",
+    what_you_lose:
+      decoded.valueEth !== "0" ? `${decoded.valueEth} ETH ($${decoded.valueUsd})` : "Gas fees only",
+    what_you_get: null,
+    gas_cost: "Unknown",
+    risk_level: "MEDIUM",
+    risk_reason: "Could not fully analyze this transaction. Treat with caution.",
+    contract_trust: verified ? "VERIFIED" : "UNVERIFIED",
+    red_flags: verified ? [] : ["Contract is not verified on Etherscan"],
+    should_sign: false,
+    one_liner: "AI unavailable — review raw transaction details manually.",
+  };
+}
+
+function postSignFallback(
+  decoded: { valueEth: string; valueUsd: string },
+  verified: boolean
+): PostSignExplanation {
+  return {
+    action: "Transaction decoded but AI explanation unavailable.",
+    in_plain_english:
+      "We decoded the transaction data but couldn't generate a plain English explanation right now. Check the raw details below.",
+    what_was_sent:
+      decoded.valueEth !== "0" ? `${decoded.valueEth} ETH ($${decoded.valueUsd})` : "Gas fees only",
+    what_was_received: null,
+    gas_paid: "Unknown",
+    contract_trust: verified ? "VERIFIED" : "UNVERIFIED",
+    red_flags: verified ? [] : ["Contract is not verified on Etherscan"],
+    one_liner: "AI unavailable — check the raw transaction details.",
+  };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { input, chain = "ethereum", demo } = body as {
+    const { input, chain = "ethereum", demo, mode = "pre-sign" } = body as {
       input: string;
       chain: string;
       demo?: boolean;
+      mode?: Mode;
     };
 
     if (demo) {
@@ -65,6 +110,24 @@ export async function POST(req: NextRequest) {
 
     const inputType = detectInputType(input.trim());
 
+    // Mode-specific input validation
+    if (mode === "post-sign" && inputType !== "txhash") {
+      return NextResponse.json(
+        {
+          error:
+            "Please paste a valid transaction hash (starts with 0x, 66 characters). Find it on Etherscan or in your wallet's activity history.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Warn if user pasted a tx hash in pre-sign mode
+    let warning: string | null = null;
+    if (mode === "pre-sign" && inputType === "txhash") {
+      warning =
+        "This looks like a completed transaction hash. Switch to 'Decode Past Transaction' to understand what already happened.";
+    }
+
     let to: string | null = null;
     let from: string | null = null;
     let calldata = "0x";
@@ -73,7 +136,10 @@ export async function POST(req: NextRequest) {
     if (inputType === "txhash") {
       const tx = await fetchTransaction(input.trim(), chain);
       if (!tx) {
-        return NextResponse.json({ error: "Transaction not found. Check the hash and chain." }, { status: 404 });
+        return NextResponse.json(
+          { error: "Transaction not found. Check the hash and selected chain." },
+          { status: 404 }
+        );
       }
       to = tx.to;
       from = tx.from;
@@ -82,15 +148,16 @@ export async function POST(req: NextRequest) {
     } else if (inputType === "address") {
       to = input.trim();
     } else {
-      // raw calldata without a known target — treat as decode-only
       calldata = input.trim();
     }
 
     if (!to) {
-      return NextResponse.json({ error: "Could not determine contract address." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Could not determine contract address. Paste calldata along with a contract address, or use a full transaction hash." },
+        { status: 400 }
+      );
     }
 
-    // Plain ETH transfer — no calldata, no contract to decode
     const isPlainTransfer = calldata === "0x" || calldata === "" || calldata === "0x0";
 
     const [abiResult, ethPrice, tokenInfo] = await Promise.all([
@@ -99,7 +166,13 @@ export async function POST(req: NextRequest) {
       isPlainTransfer ? Promise.resolve(null) : fetchTokenInfo(to, chain),
     ]);
 
-    let decoded: { method: string; params: Record<string, unknown>; valueEth: string; valueUsd: string; rawCalldata: string };
+    let decoded: {
+      method: string;
+      params: Record<string, unknown>;
+      valueEth: string;
+      valueUsd: string;
+      rawCalldata: string;
+    };
 
     if (isPlainTransfer) {
       const ethAmt = parseInt(valueHex, 16) / 1e18;
@@ -116,42 +189,42 @@ export async function POST(req: NextRequest) {
 
     const protocolName = isPlainTransfer ? "Direct Transfer" : getProtocolName(to);
 
-    let explanation;
-    try {
-      explanation = await explainTransaction({
-        protocolName,
-        contractAddress: to,
-        contractVerified: abiResult.verified,
-        methodName: decoded.method,
-        decodedParams: decoded.params,
-        chain,
-        valueEth: decoded.valueEth,
-        valueUsd: decoded.valueUsd,
-        tokenSymbol: tokenInfo?.symbol ?? null,
-        tokenName: tokenInfo?.name ?? null,
-        rawCalldata: decoded.rawCalldata,
-        isPlainTransfer,
-      });
-    } catch (aiErr) {
-      console.error("AI call failed:", aiErr);
-      // Return partial result with a fallback explanation
-      explanation = {
-        action: "Transaction decoded but AI explanation unavailable.",
-        in_plain_english:
-          "We decoded the transaction data but couldn't generate a plain English explanation right now. Review the raw details below carefully.",
-        what_you_lose: decoded.valueEth !== "0" ? `${decoded.valueEth} ETH ($${decoded.valueUsd})` : "Gas fees only",
-        what_you_get: null,
-        gas_cost: "Unknown",
-        risk_level: "MEDIUM" as const,
-        risk_reason: "Could not fully analyze this transaction. Treat with caution.",
-        contract_trust: abiResult.verified ? ("VERIFIED" as const) : ("UNVERIFIED" as const),
-        red_flags: abiResult.verified ? [] : ["Contract is not verified on Etherscan"],
-        should_sign: false,
-        one_liner: "AI unavailable — review raw transaction details manually.",
-      };
+    const ctx = {
+      protocolName,
+      contractAddress: to,
+      contractVerified: abiResult.verified,
+      methodName: decoded.method,
+      decodedParams: decoded.params,
+      chain,
+      valueEth: decoded.valueEth,
+      valueUsd: decoded.valueUsd,
+      tokenSymbol: tokenInfo?.symbol ?? null,
+      tokenName: tokenInfo?.name ?? null,
+      rawCalldata: decoded.rawCalldata,
+      isPlainTransfer,
+    };
+
+    let explanation: PreSignExplanation | PostSignExplanation;
+
+    if (mode === "post-sign") {
+      try {
+        explanation = await decodeCompletedTransaction(ctx);
+      } catch (err) {
+        console.error("AI call failed (post-sign):", err);
+        explanation = postSignFallback(decoded, abiResult.verified);
+      }
+    } else {
+      try {
+        explanation = await analyzeBeforeSigning(ctx);
+      } catch (err) {
+        console.error("AI call failed (pre-sign):", err);
+        explanation = preSignFallback(decoded, abiResult.verified);
+      }
     }
 
     return NextResponse.json({
+      mode,
+      warning,
       decoded: {
         method: decoded.method,
         params: decoded.params,
@@ -160,7 +233,7 @@ export async function POST(req: NextRequest) {
         valueEth: decoded.valueEth,
         valueUsd: decoded.valueUsd,
       },
-      explanation,
+      explanation: { mode, ...explanation },
       raw: {
         calldata: decoded.rawCalldata,
         to,

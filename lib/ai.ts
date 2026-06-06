@@ -1,4 +1,5 @@
-export interface AIExplanation {
+// Pre-sign: analyzing a transaction before the user commits to it
+export interface PreSignExplanation {
   action: string;
   in_plain_english: string;
   what_you_lose: string;
@@ -12,8 +13,28 @@ export interface AIExplanation {
   one_liner: string;
 }
 
-const SYSTEM_PROMPT = `You are DeCryp, a crypto safety tool. Analyze the transaction and return ONLY this JSON object, nothing else before or after it:
-{"action":"1 sentence what is happening","in_plain_english":"2-3 sentences for a beginner","what_you_lose":"what leaves the wallet","what_you_get":"what enters the wallet or null","gas_cost":"estimated USD cost","risk_level":"LOW|MEDIUM|HIGH|DANGER","risk_reason":"1 sentence why","contract_trust":"VERIFIED|UNVERIFIED|SUSPICIOUS","red_flags":["specific warnings or empty array"],"should_sign":false,"one_liner":"most important fact, max 12 words"}
+// Post-sign: decoding a completed transaction
+export interface PostSignExplanation {
+  action: string;
+  in_plain_english: string;
+  what_was_sent: string;
+  what_was_received: string | null;
+  gas_paid: string;
+  contract_trust: "VERIFIED" | "UNVERIFIED" | "SUSPICIOUS";
+  red_flags: string[];
+  one_liner: string;
+}
+
+export type AIExplanation =
+  | ({ mode: "pre-sign" } & PreSignExplanation)
+  | ({ mode: "post-sign" } & PostSignExplanation);
+
+const PRE_SIGN_SYSTEM = `You are DeCryp, a crypto transaction safety assistant. A user is about to sign a blockchain transaction and wants to know if it is safe. Your job is to protect them.
+
+Be direct, clear, and protective. Write like you're warning a friend who doesn't know crypto. Use present tense — this hasn't happened yet.
+
+Return ONLY valid JSON, nothing before or after it:
+{"action":"one sentence: what will literally happen","in_plain_english":"2-3 sentences for someone who has never used crypto. Present tense. What is about to happen?","what_you_lose":"exactly what leaves the wallet","what_you_get":"exactly what enters the wallet or null","gas_cost":"estimated gas in USD","risk_level":"LOW|MEDIUM|HIGH|DANGER","risk_reason":"one sentence explaining the risk rating","contract_trust":"VERIFIED|UNVERIFIED|SUSPICIOUS","red_flags":["specific warnings as strings, empty if none"],"should_sign":false,"one_liner":"most important thing to know, max 12 words, present tense"}
 
 Risk rules (be accurate, not paranoid):
 - LOW: known verified protocol (Uniswap, Aave, Compound, OpenSea, Lido), routine operation
@@ -22,23 +43,22 @@ Risk rules (be accurate, not paranoid):
 - DANGER: unverified + high value, unlimited approvals to unknown spenders, or clear scam patterns
 - should_sign=true only for LOW or MEDIUM with known protocol`;
 
-function extractJSON(raw: string): AIExplanation {
-  // 1. Strip DeepSeek <think>...</think> reasoning block (may be multiline)
+const POST_SIGN_SYSTEM = `You are DeCryp, a crypto transaction decoder. A user wants to understand a transaction that already happened. Explain it clearly in plain English. Use past tense. Do not say whether they should or shouldn't have signed it — it's done. Focus on what actually occurred.
+
+Return ONLY valid JSON, nothing before or after it:
+{"action":"one sentence: what literally happened","in_plain_english":"2-3 sentences explaining what occurred, past tense, for a non-crypto user","what_was_sent":"exactly what left the wallet","what_was_received":"exactly what entered the wallet or null if nothing","gas_paid":"gas cost that was paid in USD","contract_trust":"VERIFIED|UNVERIFIED|SUSPICIOUS","red_flags":["anything suspicious about this completed transaction, empty array if none"],"one_liner":"past tense summary, max 12 words, e.g. Swapped $500 USDC for 0.18 ETH on Uniswap"}`;
+
+function stripAndParse<T>(raw: string): T {
   let text = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-
-  // 2. Strip markdown fences
   text = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
-
-  // 3. Try direct parse first
   try {
-    return JSON.parse(text) as AIExplanation;
+    return JSON.parse(text) as T;
   } catch {
-    // 4. Find the outermost {...} block and parse that
     const start = text.indexOf("{");
     const end = text.lastIndexOf("}");
     if (start !== -1 && end !== -1 && end > start) {
       try {
-        return JSON.parse(text.slice(start, end + 1)) as AIExplanation;
+        return JSON.parse(text.slice(start, end + 1)) as T;
       } catch {
         // fall through
       }
@@ -47,7 +67,7 @@ function extractJSON(raw: string): AIExplanation {
   }
 }
 
-export async function explainTransaction(params: {
+interface TransactionContext {
   protocolName: string | null;
   contractAddress: string;
   contractVerified: boolean;
@@ -60,22 +80,29 @@ export async function explainTransaction(params: {
   tokenName: string | null;
   rawCalldata: string;
   isPlainTransfer?: boolean;
-}): Promise<AIExplanation> {
-  const userPrompt = params.isPlainTransfer
-    ? `This is a plain ETH transfer — no smart contract involved.
-Recipient: ${params.contractAddress}
-Chain: ${params.chain}
-Value: ${params.valueEth} ETH ($${params.valueUsd} USD)
-Note: Plain wallet-to-wallet ETH sends are always LOW risk.`
-    : `Protocol: ${params.protocolName ?? "Unknown"}
-Contract: ${params.contractAddress}
-Verified: ${params.contractVerified}
-Method: ${params.methodName}
-Params: ${JSON.stringify(params.decodedParams)}
-Chain: ${params.chain}
-Value: ${params.valueEth} ETH ($${params.valueUsd} USD)
-Token: ${params.tokenSymbol ? `${params.tokenSymbol} (${params.tokenName})` : "none"}`;
+}
 
+function buildUserPrompt(ctx: TransactionContext, mode: "pre-sign" | "post-sign"): string {
+  if (ctx.isPlainTransfer) {
+    const verb = mode === "pre-sign" ? "is about to send" : "sent";
+    return `This is a plain ETH transfer — no smart contract involved. The wallet ${verb} ETH directly to another address.
+Recipient: ${ctx.contractAddress}
+Chain: ${ctx.chain}
+Value: ${ctx.valueEth} ETH ($${ctx.valueUsd} USD)
+${mode === "pre-sign" ? "Note: Plain wallet-to-wallet ETH sends are always LOW risk." : "Note: Plain ETH transfers are routine."}`;
+  }
+
+  return `Protocol: ${ctx.protocolName ?? "Unknown"}
+Contract: ${ctx.contractAddress}
+Verified: ${ctx.contractVerified}
+Method: ${ctx.methodName}
+Params: ${JSON.stringify(ctx.decodedParams)}
+Chain: ${ctx.chain}
+Value: ${ctx.valueEth} ETH ($${ctx.valueUsd} USD)
+Token: ${ctx.tokenSymbol ? `${ctx.tokenSymbol} (${ctx.tokenName})` : "none"}`;
+}
+
+async function callNvidia(systemPrompt: string, userPrompt: string): Promise<string> {
   const apiKey = process.env.NVIDIA_API_KEY;
   if (!apiKey) throw new Error("NVIDIA_API_KEY not set");
 
@@ -88,12 +115,12 @@ Token: ${params.tokenSymbol ? `${params.tokenSymbol} (${params.tokenName})` : "n
     body: JSON.stringify({
       model: "meta/llama-3.3-70b-instruct",
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
       temperature: 0.2,
       top_p: 0.9,
-      max_tokens: 400,
+      max_tokens: 450,
     }),
     cache: "no-store",
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -106,8 +133,15 @@ Token: ${params.tokenSymbol ? `${params.tokenSymbol} (${params.tokenName})` : "n
   }
 
   const data = await response.json();
-  const rawContent: string = data.choices?.[0]?.message?.content ?? "";
+  return data.choices?.[0]?.message?.content ?? "";
+}
 
-  const parsed = extractJSON(rawContent);
-  return parsed;
+export async function analyzeBeforeSigning(ctx: TransactionContext): Promise<PreSignExplanation> {
+  const raw = await callNvidia(PRE_SIGN_SYSTEM, buildUserPrompt(ctx, "pre-sign"));
+  return stripAndParse<PreSignExplanation>(raw);
+}
+
+export async function decodeCompletedTransaction(ctx: TransactionContext): Promise<PostSignExplanation> {
+  const raw = await callNvidia(POST_SIGN_SYSTEM, buildUserPrompt(ctx, "post-sign"));
+  return stripAndParse<PostSignExplanation>(raw);
 }
