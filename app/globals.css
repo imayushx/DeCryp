@@ -84,3 +84,8 @@ select option { background: #0f0f17; color: #f1f0f5; }
 
 /* Mono */
 .font-mono { font-family: var(--font-ibm-plex-mono), 'IBM Plex Mono', monospace; }
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-10px); }
+}
