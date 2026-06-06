@@ -90,14 +90,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Could not determine contract address." }, { status: 400 });
     }
 
+    // Plain ETH transfer — no calldata, no contract to decode
+    const isPlainTransfer = calldata === "0x" || calldata === "" || calldata === "0x0";
+
     const [abiResult, ethPrice, tokenInfo] = await Promise.all([
-      fetchABI(to, chain),
+      isPlainTransfer ? Promise.resolve({ abi: null, verified: true }) : fetchABI(to, chain),
       fetchEthPrice(),
-      fetchTokenInfo(to, chain),
+      isPlainTransfer ? Promise.resolve(null) : fetchTokenInfo(to, chain),
     ]);
 
-    const decoded = decodeCalldata(calldata, abiResult.abi ?? "[]", valueHex, ethPrice, to, from);
-    const protocolName = getProtocolName(to);
+    let decoded: { method: string; params: Record<string, unknown>; valueEth: string; valueUsd: string; rawCalldata: string };
+
+    if (isPlainTransfer) {
+      const ethAmt = parseInt(valueHex, 16) / 1e18;
+      decoded = {
+        method: "ETH Transfer",
+        params: { recipient: to, ...(from ? { sender: from } : {}) },
+        valueEth: ethAmt.toFixed(6),
+        valueUsd: (ethAmt * ethPrice).toFixed(2),
+        rawCalldata: "0x",
+      };
+    } else {
+      decoded = decodeCalldata(calldata, abiResult.abi ?? "[]", valueHex, ethPrice, to, from);
+    }
+
+    const protocolName = isPlainTransfer ? "Direct Transfer" : getProtocolName(to);
 
     let explanation;
     try {
@@ -113,6 +130,7 @@ export async function POST(req: NextRequest) {
         tokenSymbol: tokenInfo?.symbol ?? null,
         tokenName: tokenInfo?.name ?? null,
         rawCalldata: decoded.rawCalldata,
+        isPlainTransfer,
       });
     } catch (aiErr) {
       console.error("AI call failed:", aiErr);

@@ -59,8 +59,15 @@ export async function explainTransaction(params: {
   tokenSymbol: string | null;
   tokenName: string | null;
   rawCalldata: string;
+  isPlainTransfer?: boolean;
 }): Promise<AIExplanation> {
-  const userPrompt = `Protocol: ${params.protocolName ?? "Unknown"}
+  const userPrompt = params.isPlainTransfer
+    ? `This is a plain ETH transfer — no smart contract involved.
+Recipient: ${params.contractAddress}
+Chain: ${params.chain}
+Value: ${params.valueEth} ETH ($${params.valueUsd} USD)
+Note: Plain wallet-to-wallet ETH sends are always LOW risk.`
+    : `Protocol: ${params.protocolName ?? "Unknown"}
 Contract: ${params.contractAddress}
 Verified: ${params.contractVerified}
 Method: ${params.methodName}
