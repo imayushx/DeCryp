@@ -10,11 +10,24 @@ const AnimatedShaderBackground = () => {
     const container = containerRef.current;
     if (!container) return;
 
+    const isMobile = window.innerWidth < 768 || navigator.maxTouchPoints > 0;
+    const deviceMemory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 4;
+    const isLowEnd =
+      isMobile &&
+      (navigator.hardwareConcurrency ?? 4) <= 4 &&
+      deviceMemory <= 4;
+
+    // Skip shader entirely on low-end mobile — CSS gradient fallback in parent
+    if (isLowEnd) return;
+
+    const NUM_ITER = isMobile ? 15 : 35;
+    const pixelRatio = isMobile ? 1 : Math.min(window.devicePixelRatio, 2);
+
     const scene = new THREE.Scene();
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: !isMobile, alpha: true });
     renderer.setSize(container.offsetWidth, container.offsetHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(pixelRatio);
     container.appendChild(renderer.domElement);
 
     const material = new THREE.ShaderMaterial({
@@ -23,6 +36,7 @@ const AnimatedShaderBackground = () => {
         iResolution: {
           value: new THREE.Vector2(container.offsetWidth, container.offsetHeight),
         },
+        iIter: { value: NUM_ITER },
       },
       vertexShader: `
         void main() {
@@ -32,6 +46,7 @@ const AnimatedShaderBackground = () => {
       fragmentShader: `
         uniform float iTime;
         uniform vec2 iResolution;
+        uniform float iIter;
 
         #define NUM_OCTAVES 3
 
@@ -71,9 +86,10 @@ const AnimatedShaderBackground = () => {
           float f = 2.0 + fbm(p + vec2(iTime * 5.0, 0.0)) * 0.5;
 
           for (float i = 0.0; i < 35.0; i++) {
+            if (i >= iIter) break;
             v = p + cos(i * i + (iTime + p.x * 0.08) * 0.025 + i * vec2(13.0, 11.0)) * 3.5
               + vec2(sin(iTime * 3.0 + i) * 0.003, cos(iTime * 3.5 - i) * 0.003);
-            float tailNoise = fbm(v + vec2(iTime * 0.5, i)) * 0.3 * (1.0 - (i / 35.0));
+            float tailNoise = fbm(v + vec2(iTime * 0.5, i)) * 0.3 * (1.0 - (i / iIter));
             vec4 auroraColors = vec4(
               0.1 + 0.3 * sin(i * 0.2 + iTime * 0.4),
               0.3 + 0.5 * cos(i * 0.3 + iTime * 0.5),
@@ -81,7 +97,7 @@ const AnimatedShaderBackground = () => {
               1.0
             );
             vec4 contrib = auroraColors * exp(sin(i * i + iTime * 0.8)) / length(max(v, vec2(v.x * f * 0.015, v.y * 1.5)));
-            float thinness = smoothstep(0.0, 1.0, i / 35.0) * 0.6;
+            float thinness = smoothstep(0.0, 1.0, i / iIter) * 0.6;
             o += contrib * (1.0 + tailNoise * 0.8) * thinness;
           }
 
@@ -96,13 +112,19 @@ const AnimatedShaderBackground = () => {
     const mesh = new THREE.Mesh(geometry, material);
     scene.add(mesh);
 
+    // On mobile, throttle to ~30fps to halve GPU load
+    const targetMs = isMobile ? 33 : 16;
+    let lastTime = 0;
     let frameId: number;
-    const animate = () => {
-      material.uniforms.iTime.value += 0.016;
-      renderer.render(scene, camera);
+
+    const animate = (now: number) => {
       frameId = requestAnimationFrame(animate);
+      if (now - lastTime < targetMs) return;
+      lastTime = now;
+      material.uniforms.iTime.value += isMobile ? 0.033 : 0.016;
+      renderer.render(scene, camera);
     };
-    animate();
+    frameId = requestAnimationFrame(animate);
 
     const handleResize = () => {
       if (!container) return;

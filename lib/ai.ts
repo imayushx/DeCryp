@@ -80,9 +80,20 @@ interface TransactionContext {
   tokenName: string | null;
   rawCalldata: string;
   isPlainTransfer?: boolean;
+  isAddressLookup?: boolean;
 }
 
 function buildUserPrompt(ctx: TransactionContext, mode: "pre-sign" | "post-sign"): string {
+  if (ctx.isAddressLookup) {
+    return `The user pasted a contract address to inspect — no specific transaction or calldata was provided. Describe what this contract does and whether it is trustworthy.
+Contract: ${ctx.contractAddress}
+Protocol: ${ctx.protocolName ?? "Unknown"}
+Verified on Etherscan: ${ctx.contractVerified}
+Chain: ${ctx.chain}
+Token: ${ctx.tokenSymbol ? `${ctx.tokenSymbol} (${ctx.tokenName})` : "none"}
+Note: Since no calldata was provided, use action="Contract inspection", what_you_lose="Nothing (no transaction)", what_you_get=null, gas_cost="N/A", risk_level based on verification status and protocol recognition. If verified and known, LOW. If unverified, HIGH.`;
+  }
+
   if (ctx.isPlainTransfer) {
     const verb = mode === "pre-sign" ? "is about to send" : "sent";
     return `This is a plain ETH transfer — no smart contract involved. The wallet ${verb} ETH directly to another address.

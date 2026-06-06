@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
       const tx = await fetchTransaction(input.trim(), chain);
       if (!tx) {
         return NextResponse.json(
-          { error: "Transaction not found. Check the hash and selected chain." },
+          { error: "Transaction not found. Check the hash and the selected chain — make sure you picked the right network (ETH, Base, Polygon…)." },
           { status: 404 }
         );
       }
@@ -145,25 +145,38 @@ export async function POST(req: NextRequest) {
       from = tx.from;
       calldata = tx.input ?? "0x";
       valueHex = tx.value ?? "0x0";
+
+      // Contract creation — to is null
+      if (!to) {
+        return NextResponse.json(
+          { error: "This transaction created a contract. Contract deployment transactions can't be decoded this way — paste the deployed contract address instead." },
+          { status: 400 }
+        );
+      }
     } else if (inputType === "address") {
+      // Address-only: fetch contract ABI and show what this contract does
       to = input.trim();
+      calldata = "0x"; // no specific call — we'll describe the contract
     } else {
+      // Raw calldata without a to address — we can still try to decode it
       calldata = input.trim();
     }
 
-    if (!to) {
-      return NextResponse.json(
-        { error: "Could not determine contract address. Paste calldata along with a contract address, or use a full transaction hash." },
-        { status: 400 }
-      );
+    // For raw calldata without an address we can't fetch ABI — but still analyze
+    if (!to && inputType === "calldata") {
+      // Synthesize a minimal analysis without a contract address
+      to = "0x0000000000000000000000000000000000000000";
     }
 
-    const isPlainTransfer = calldata === "0x" || calldata === "" || calldata === "0x0";
+    // isPlainTransfer: either explicit ETH send (tx with no input) OR address-only lookup
+    const isPlainTransfer =
+      (calldata === "0x" || calldata === "" || calldata === "0x0") &&
+      inputType !== "address";
 
     const [abiResult, ethPrice, tokenInfo] = await Promise.all([
-      isPlainTransfer ? Promise.resolve({ abi: null, verified: true }) : fetchABI(to, chain),
+      isPlainTransfer ? Promise.resolve({ abi: null, verified: true }) : fetchABI(to!, chain),
       fetchEthPrice(),
-      isPlainTransfer ? Promise.resolve(null) : fetchTokenInfo(to, chain),
+      isPlainTransfer ? Promise.resolve(null) : fetchTokenInfo(to!, chain),
     ]);
 
     let decoded: {
@@ -174,7 +187,16 @@ export async function POST(req: NextRequest) {
       rawCalldata: string;
     };
 
-    if (isPlainTransfer) {
+    if (inputType === "address") {
+      // Address-only lookup — describe the contract itself
+      decoded = {
+        method: "Contract Lookup",
+        params: { address: to, ...(tokenInfo ? { token: tokenInfo.symbol, name: tokenInfo.name } : {}) },
+        valueEth: "0.000000",
+        valueUsd: "0.00",
+        rawCalldata: "0x",
+      };
+    } else if (isPlainTransfer) {
       const ethAmt = parseInt(valueHex, 16) / 1e18;
       decoded = {
         method: "ETH Transfer",
@@ -184,14 +206,19 @@ export async function POST(req: NextRequest) {
         rawCalldata: "0x",
       };
     } else {
-      decoded = decodeCalldata(calldata, abiResult.abi ?? "[]", valueHex, ethPrice, to, from);
+      decoded = decodeCalldata(calldata, abiResult.abi ?? "[]", valueHex, ethPrice, to!, from);
     }
 
-    const protocolName = isPlainTransfer ? "Direct Transfer" : getProtocolName(to);
+    const protocolName =
+      inputType === "address"
+        ? (getProtocolName(to!) ?? (abiResult.verified ? "Verified Contract" : "Unverified Contract"))
+        : isPlainTransfer
+        ? "Direct Transfer"
+        : getProtocolName(to!);
 
     const ctx = {
       protocolName,
-      contractAddress: to,
+      contractAddress: to!,
       contractVerified: abiResult.verified,
       methodName: decoded.method,
       decodedParams: decoded.params,
@@ -202,6 +229,7 @@ export async function POST(req: NextRequest) {
       tokenName: tokenInfo?.name ?? null,
       rawCalldata: decoded.rawCalldata,
       isPlainTransfer,
+      isAddressLookup: inputType === "address",
     };
 
     let explanation: PreSignExplanation | PostSignExplanation;
