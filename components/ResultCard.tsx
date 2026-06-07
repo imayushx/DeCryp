@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import RedFlags from "./RedFlags";
+import ShareModal from "./ShareModal";
 import type { AIExplanation, PreSignExplanation, PostSignExplanation, ContractDeploymentExplanation } from "@/lib/ai";
 
 interface DecodedData {
@@ -324,7 +325,7 @@ function PreSignActions({ onReset }: { onReset: () => void }) {
   );
 }
 
-function PostSignActions({ onReset }: { onReset: () => void }) {
+function PostSignActions({ onReset, onShare }: { onReset: () => void; onShare: () => void }) {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.48 }} className="flex gap-3 pt-1">
       <button
@@ -338,13 +339,18 @@ function PostSignActions({ onReset }: { onReset: () => void }) {
         Decode Another
       </button>
       <button
-        onClick={() => { if (typeof window !== "undefined") navigator.clipboard.writeText(window.location.href).catch(() => {}); }}
+        onClick={onShare}
         className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-mono text-sm transition-all duration-200"
         style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", color: "var(--text-tertiary)" }}
-        onMouseEnter={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)"; e.currentTarget.style.color = "var(--text-secondary)"; }}
+        onMouseEnter={(e) => { e.currentTarget.style.borderColor = "rgba(0,255,136,0.25)"; e.currentTarget.style.color = "#00ff88"; }}
         onMouseLeave={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = "var(--text-tertiary)"; }}
       >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+          <circle cx="18" cy="5" r="3" stroke="currentColor" strokeWidth="2"/>
+          <circle cx="6" cy="12" r="3" stroke="currentColor" strokeWidth="2"/>
+          <circle cx="18" cy="19" r="3" stroke="currentColor" strokeWidth="2"/>
+          <path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98" stroke="currentColor" strokeWidth="2"/>
+        </svg>
         Share
       </button>
     </motion.div>
@@ -391,6 +397,8 @@ function AddressCell({ label, address, chain }: { label: string; address: string
 
 export default function ResultCard({ decoded, explanation, raw, deployment, onReset, onInspect }: ResultCardProps) {
   const [rawOpen, setRawOpen] = useState(false);
+  const [showShare, setShowShare] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
   const mode = explanation.mode;
 
   // ── Contract deployment ────────────────────────────────────────────────────
@@ -602,7 +610,7 @@ export default function ResultCard({ decoded, explanation, raw, deployment, onRe
   const exp = explanation as PostSignExplanation & { mode: "post-sign" };
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }} className="w-full max-w-[640px] mx-auto space-y-3">
+    <motion.div ref={cardRef} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }} className="w-full max-w-[640px] mx-auto space-y-3">
       <PostSignBadge />
 
       <Panel delay={0.08}>
@@ -650,7 +658,11 @@ export default function ResultCard({ decoded, explanation, raw, deployment, onRe
       </Panel>
 
       <RawDetails decoded={decoded} raw={raw} open={rawOpen} onToggle={() => setRawOpen(v => !v)} />
-      <PostSignActions onReset={onReset} />
+      <PostSignActions onReset={onReset} onShare={() => setShowShare(true)} />
+
+      {showShare && (
+        <ShareModal targetRef={cardRef} onClose={() => setShowShare(false)} />
+      )}
     </motion.div>
   );
 }
