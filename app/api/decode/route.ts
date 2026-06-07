@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export const maxDuration = 60;
-import { fetchABI, fetchTransaction, fetchTokenInfo, fetchEthPrice } from "@/lib/etherscan";
+import { fetchABI, fetchTransaction, fetchTransactionReceipt, fetchTokenInfo, fetchEthPrice } from "@/lib/etherscan";
 import { decodeCalldata, detectInputType } from "@/lib/decoder";
 import { getProtocolName } from "@/lib/protocols";
-import { analyzeBeforeSigning, decodeCompletedTransaction } from "@/lib/ai";
-import type { PreSignExplanation, PostSignExplanation } from "@/lib/ai";
+import { analyzeBeforeSigning, decodeCompletedTransaction, analyzeContractDeployment } from "@/lib/ai";
+import type { PreSignExplanation, PostSignExplanation, ContractDeploymentExplanation } from "@/lib/ai";
 
 // Demo result for "Try Example" — pre-sign mode, Uniswap V3 swap
 const DEMO_RESULT = {
@@ -141,12 +141,89 @@ export async function POST(req: NextRequest) {
       calldata = tx.input ?? "0x";
       valueHex = tx.value ?? "0x0";
 
-      // Contract creation — to is null
+      // Contract creation — to is null, handle as first-class deployment
       if (!to) {
-        return NextResponse.json(
-          { error: "This transaction created a contract. Contract deployment transactions can't be decoded this way — paste the deployed contract address instead." },
-          { status: 400 }
-        );
+        const [receipt, ethPrice] = await Promise.all([
+          fetchTransactionReceipt(input.trim(), chain),
+          fetchEthPrice(),
+        ]);
+
+        const deployedAddress = receipt?.contractAddress ?? null;
+        const gasUsed = receipt?.gasUsed
+          ? parseInt(receipt.gasUsed, 16).toLocaleString()
+          : null;
+        const bytecodeSize = tx.input && tx.input.length > 2
+          ? Math.floor((tx.input.length - 2) / 2)
+          : 0;
+        const valueWei = BigInt(tx.value ?? "0x0");
+        const valueSpentEth = (Number(valueWei) / 1e18).toFixed(6);
+        const valueSpentUsd = (parseFloat(valueSpentEth) * ethPrice).toFixed(2);
+
+        // Pre-compute flags before calling AI
+        const preComputedFlags: string[] = [];
+        if (parseFloat(valueSpentEth) > 5) {
+          preComputedFlags.push("Large ETH value sent at deployment — high attention warranted");
+        } else if (parseFloat(valueSpentEth) > 0.1) {
+          preComputedFlags.push("Contract received ETH during deployment — verify this was intentional");
+        }
+        if (bytecodeSize < 100 && bytecodeSize > 0) {
+          preComputedFlags.push("Very small contract — could be a minimal proxy, test contract, or honeypot shell");
+        }
+
+        let deploymentExplanation: ContractDeploymentExplanation;
+        try {
+          deploymentExplanation = await analyzeContractDeployment({
+            txHash: input.trim(),
+            chain,
+            deployerAddress: tx.from ?? "unknown",
+            deployedAddress,
+            bytecodeSize,
+            valueSpent: valueSpentEth,
+            gasUsed,
+            preComputedFlags,
+          });
+        } catch (err) {
+          console.error("AI call failed (deployment):", err);
+          deploymentExplanation = {
+            action: "A new smart contract was deployed.",
+            what_happened: "Someone published a new smart contract to the blockchain. We couldn't generate a full AI explanation right now — check the details below.",
+            deployer_context: "Deployer address details unavailable.",
+            contract_size_context: `Contract is ${bytecodeSize} bytes.`,
+            eth_spent_context: parseFloat(valueSpentEth) > 0 ? `${valueSpentEth} ETH was sent at deployment.` : "No ETH was sent during deployment.",
+            risk_level: "MEDIUM",
+            risk_reason: "AI analysis unavailable. Review manually.",
+            red_flags: preComputedFlags,
+            one_liner: "Contract deployment — AI analysis unavailable.",
+          };
+        }
+
+        return NextResponse.json({
+          mode: "contract-deployment",
+          warning: null,
+          decoded: {
+            method: "Contract Deployment",
+            params: { deployer: tx.from, deployedContract: deployedAddress },
+            protocol: null,
+            contractVerified: false,
+            valueEth: valueSpentEth,
+            valueUsd: valueSpentUsd,
+          },
+          explanation: { mode: "contract-deployment", ...deploymentExplanation },
+          raw: {
+            calldata: tx.input ?? "0x",
+            to: deployedAddress ?? "pending",
+            chain,
+          },
+          deployment: {
+            deployerAddress: tx.from ?? "unknown",
+            deployedAddress,
+            bytecodeSize,
+            valueSpentEth,
+            valueSpentUsd,
+            gasUsed,
+            txHash: input.trim(),
+          },
+        });
       }
     } else if (inputType === "address") {
       // Address-only: fetch contract ABI and show what this contract does

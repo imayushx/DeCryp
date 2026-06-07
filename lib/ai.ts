@@ -25,9 +25,23 @@ export interface PostSignExplanation {
   one_liner: string;
 }
 
+// Contract deployment: someone published a new smart contract
+export interface ContractDeploymentExplanation {
+  action: string;
+  what_happened: string;
+  deployer_context: string;
+  contract_size_context: string;
+  eth_spent_context: string;
+  risk_level: "LOW" | "MEDIUM" | "HIGH" | "DANGER";
+  risk_reason: string;
+  red_flags: string[];
+  one_liner: string;
+}
+
 export type AIExplanation =
   | ({ mode: "pre-sign" } & PreSignExplanation)
-  | ({ mode: "post-sign" } & PostSignExplanation);
+  | ({ mode: "post-sign" } & PostSignExplanation)
+  | ({ mode: "contract-deployment" } & ContractDeploymentExplanation);
 
 const PRE_SIGN_SYSTEM = `You are DeCryp, a crypto transaction safety assistant. A user is about to sign a blockchain transaction and wants to know if it is safe. Your job is to protect them.
 
@@ -155,4 +169,42 @@ export async function analyzeBeforeSigning(ctx: TransactionContext): Promise<Pre
 export async function decodeCompletedTransaction(ctx: TransactionContext): Promise<PostSignExplanation> {
   const raw = await callNvidia(POST_SIGN_SYSTEM, buildUserPrompt(ctx, "post-sign"));
   return stripAndParse<PostSignExplanation>(raw);
+}
+
+const DEPLOYMENT_SYSTEM = `You are DeCryp, a blockchain transaction decoder. A user is looking at a contract deployment transaction — someone published a new smart contract to the blockchain. Explain what this means in plain English. Use past tense. Do not give a should_sign verdict. This already happened.
+
+Return ONLY valid JSON, nothing before or after it:
+{"action":"one sentence: a new smart contract was deployed","what_happened":"2-3 sentences explaining contract deployment to someone who has never heard of it. What does it mean to deploy a contract? What did this specific deployment do?","deployer_context":"one sentence about the deployer address — known entity or unknown wallet?","contract_size_context":"one sentence interpreting bytecode size — is this tiny or complex? What does that suggest?","eth_spent_context":"one sentence about ETH sent during deployment — normal contracts cost gas only, contracts that also received ETH at deployment warrant attention","risk_level":"LOW|MEDIUM|HIGH|DANGER","risk_reason":"one sentence: why this risk level","red_flags":["specific warnings, empty array if nothing suspicious"],"one_liner":"max 12 words, past tense, what happened"}`;
+
+export interface DeploymentContext {
+  txHash: string;
+  chain: string;
+  deployerAddress: string;
+  deployedAddress: string | null;
+  bytecodeSize: number;
+  valueSpent: string;
+  gasUsed: string | null;
+  preComputedFlags: string[];
+}
+
+export async function analyzeContractDeployment(ctx: DeploymentContext): Promise<ContractDeploymentExplanation> {
+  const flagsLine = ctx.preComputedFlags.length > 0
+    ? `Pre-computed flags: ${ctx.preComputedFlags.join("; ")}`
+    : "Pre-computed flags: none";
+
+  const userPrompt = `Decode this contract deployment transaction:
+
+Transaction Hash: ${ctx.txHash}
+Chain: ${ctx.chain}
+Deployer Wallet: ${ctx.deployerAddress}
+Newly Deployed Contract: ${ctx.deployedAddress ?? "unknown (receipt unavailable)"}
+Bytecode Size: ${ctx.bytecodeSize} bytes
+ETH Sent During Deployment: ${ctx.valueSpent} ETH
+Gas Used: ${ctx.gasUsed ?? "unknown"}
+${flagsLine}
+
+Explain what happened and flag anything unusual.`;
+
+  const raw = await callNvidia(DEPLOYMENT_SYSTEM, userPrompt);
+  return stripAndParse<ContractDeploymentExplanation>(raw);
 }

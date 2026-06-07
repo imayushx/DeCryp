@@ -84,6 +84,29 @@ export async function fetchTokenInfo(address: string, chain: string): Promise<{
   }
 }
 
+export async function fetchTransactionReceipt(txHash: string, chain: string): Promise<{
+  contractAddress: string | null;
+  gasUsed: string | null;
+} | null> {
+  const chainId = CHAIN_IDS[chain] ?? 1;
+  const apiKey = process.env.ETHERSCAN_API_KEY ?? "";
+  const url = `${ETHERSCAN_BASE}?chainid=${chainId}&module=proxy&action=eth_getTransactionReceipt&txhash=${txHash}&apikey=${apiKey}`;
+
+  try {
+    const res = await fetch(url, { cache: "no-store", signal: timeout() });
+    const json = await res.json();
+    if (json.result) {
+      return {
+        contractAddress: json.result.contractAddress ?? null,
+        gasUsed: json.result.gasUsed ?? null,
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchEthPrice(): Promise<number> {
   const apiKey = process.env.ETHERSCAN_API_KEY ?? "";
   const url = `${ETHERSCAN_BASE}?chainid=1&module=stats&action=ethprice&apikey=${apiKey}`;

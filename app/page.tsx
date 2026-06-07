@@ -9,7 +9,7 @@ import LoadingTerminal from "@/components/LoadingTerminal";
 import AnimatedShaderBackground from "@/components/ui/animated-shader-background";
 import type { AIExplanation } from "@/lib/ai";
 
-type Mode = "pre-sign" | "post-sign";
+type Mode = "pre-sign" | "post-sign" | "contract-deployment";
 
 interface DecodeResult {
   mode: Mode;
@@ -28,16 +28,21 @@ interface DecodeResult {
     to: string;
     chain: string;
   };
+  deployment?: {
+    deployerAddress: string;
+    deployedAddress: string | null;
+    bytecodeSize: number;
+    valueSpentEth: string;
+    valueSpentUsd: string;
+    gasUsed: string | null;
+    txHash: string;
+  };
   error?: string;
 }
 
 type AppState = "idle" | "loading" | "result" | "error";
 
-// tx hash in pre-sign = "Decode Past Transaction" (post-sign)
-// tx hash in post-sign = "Decode Past Transaction" (post-sign)
-// address = pre-sign (contract inspection)
-// calldata = pre-sign (safety analysis)
-function deriveMode(detectedType: DetectedType): Mode {
+function deriveMode(detectedType: DetectedType): "pre-sign" | "post-sign" {
   if (detectedType === "txhash") return "post-sign";
   return "pre-sign";
 }
@@ -84,6 +89,11 @@ export default function Home() {
     setErrorMsg("");
   }
 
+  // Called from ResultCard "Inspect Deployed Contract" button
+  function inspectAddress(address: string, chain: string) {
+    decode(address, chain, "address", false);
+  }
+
   const showShader = state === "idle" || state === "loading" || state === "error";
 
   return (
@@ -98,7 +108,6 @@ export default function Home() {
             transition={{ duration: 0.4 }}
           >
             <div className="relative min-h-screen flex flex-col">
-              {/* Shader background */}
               <div className="absolute inset-0 overflow-hidden">
                 <AnimatedShaderBackground />
                 <div
@@ -111,7 +120,6 @@ export default function Home() {
                 />
               </div>
 
-              {/* Content */}
               <div className="relative z-10 px-4 pb-20">
                 <div className="max-w-[640px] mx-auto">
                   <Hero
@@ -185,7 +193,9 @@ export default function Home() {
                 decoded={result.decoded}
                 explanation={result.explanation}
                 raw={result.raw}
+                deployment={result.deployment}
                 onReset={reset}
+                onInspect={inspectAddress}
               />
             </div>
           </motion.div>
