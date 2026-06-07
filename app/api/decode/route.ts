@@ -121,12 +121,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Warn if user pasted a tx hash in pre-sign mode
-    let warning: string | null = null;
-    if (mode === "pre-sign" && inputType === "txhash") {
-      warning =
-        "This looks like a completed transaction hash. Switch to 'Decode Past Transaction' to understand what already happened.";
-    }
+    const warning: string | null = null;
 
     let to: string | null = null;
     let from: string | null = null;

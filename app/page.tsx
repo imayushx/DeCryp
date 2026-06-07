@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Hero from "@/components/Hero";
+import type { DetectedType } from "@/components/Hero";
 import ResultCard from "@/components/ResultCard";
 import LoadingTerminal from "@/components/LoadingTerminal";
 import AnimatedShaderBackground from "@/components/ui/animated-shader-background";
@@ -32,15 +33,26 @@ interface DecodeResult {
 
 type AppState = "idle" | "loading" | "result" | "error";
 
+// tx hash in pre-sign = "Decode Past Transaction" (post-sign)
+// tx hash in post-sign = "Decode Past Transaction" (post-sign)
+// address = pre-sign (contract inspection)
+// calldata = pre-sign (safety analysis)
+function deriveMode(detectedType: DetectedType): Mode {
+  if (detectedType === "txhash") return "post-sign";
+  return "pre-sign";
+}
+
 export default function Home() {
   const [state, setState] = useState<AppState>("idle");
   const [result, setResult] = useState<DecodeResult | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
 
-  async function decode(input: string, chain: string, mode: Mode, demo = false) {
+  async function decode(input: string, chain: string, detectedType: DetectedType, demo = false) {
     setState("loading");
     setResult(null);
     setErrorMsg("");
+
+    const mode = demo ? "pre-sign" : deriveMode(detectedType);
 
     try {
       const res = await fetch("/api/decode", {
@@ -103,8 +115,8 @@ export default function Home() {
               <div className="relative z-10 px-4 pb-20">
                 <div className="max-w-[640px] mx-auto">
                   <Hero
-                    onDecode={(input, chain, mode) => decode(input, chain, mode, false)}
-                    onDemo={() => decode("", "ethereum", "pre-sign", true)}
+                    onDecode={(input, chain, detectedType) => decode(input, chain, detectedType, false)}
+                    onDemo={() => decode("", "ethereum", "empty", true)}
                     loading={state === "loading"}
                   />
 
@@ -155,7 +167,6 @@ export default function Home() {
             className="px-4 pt-12 pb-20"
           >
             <div className="max-w-[640px] mx-auto">
-              {/* Warning banner — e.g. tx hash pasted in pre-sign mode */}
               {result.warning && (
                 <motion.div
                   initial={{ opacity: 0, y: -6 }}
