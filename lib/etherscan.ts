@@ -87,6 +87,8 @@ export async function fetchTokenInfo(address: string, chain: string): Promise<{
 export async function fetchTransactionReceipt(txHash: string, chain: string): Promise<{
   contractAddress: string | null;
   gasUsed: string | null;
+  from: string | null;
+  blockNumber: string | null;
 } | null> {
   const chainId = CHAIN_IDS[chain] ?? 1;
   const apiKey = process.env.ETHERSCAN_API_KEY ?? "";
@@ -99,9 +101,26 @@ export async function fetchTransactionReceipt(txHash: string, chain: string): Pr
       return {
         contractAddress: json.result.contractAddress ?? null,
         gasUsed: json.result.gasUsed ?? null,
+        from: json.result.from ?? null,
+        blockNumber: json.result.blockNumber ?? null,
       };
     }
     return null;
+  } catch {
+    return null;
+  }
+}
+
+// Raw fetch — returns the full result object so callers can access input/data/value/from/to
+export async function fetchTransactionRaw(txHash: string, chain: string): Promise<Record<string, string> | null> {
+  const chainId = CHAIN_IDS[chain] ?? 1;
+  const apiKey = process.env.ETHERSCAN_API_KEY ?? "";
+  const url = `${ETHERSCAN_BASE}?chainid=${chainId}&module=proxy&action=eth_getTransactionByHash&txhash=${txHash}&apikey=${apiKey}`;
+
+  try {
+    const res = await fetch(url, { cache: "no-store", signal: timeout() });
+    const json = await res.json();
+    return json.result ?? null;
   } catch {
     return null;
   }

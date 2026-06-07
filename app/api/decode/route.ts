@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export const maxDuration = 60;
-import { fetchABI, fetchTransaction, fetchTransactionReceipt, fetchTokenInfo, fetchEthPrice } from "@/lib/etherscan";
+import { fetchABI, fetchTransactionReceipt, fetchTransactionRaw, fetchTokenInfo, fetchEthPrice } from "@/lib/etherscan";
 import { decodeCalldata, detectInputType } from "@/lib/decoder";
 import { getProtocolName } from "@/lib/protocols";
 import { analyzeBeforeSigning, decodeCompletedTransaction, analyzeContractDeployment } from "@/lib/ai";
@@ -129,44 +129,109 @@ export async function POST(req: NextRequest) {
     let valueHex = "0x0";
 
     if (inputType === "txhash") {
-      const tx = await fetchTransaction(input.trim(), chain);
-      if (!tx) {
+      // Fetch tx + receipt in parallel — receipt is needed to detect contract creation
+      const [txRaw, receipt, ethPrice] = await Promise.all([
+        fetchTransactionRaw(input.trim(), chain),
+        fetchTransactionReceipt(input.trim(), chain),
+        fetchEthPrice(),
+      ]);
+
+      if (!txRaw && !receipt) {
         return NextResponse.json(
           { error: "Transaction not found. Check the hash and the selected chain — make sure you picked the right network (ETH, Base, Polygon…)." },
           { status: 404 }
         );
       }
-      to = tx.to;
-      from = tx.from;
-      calldata = tx.input ?? "0x";
-      valueHex = tx.value ?? "0x0";
 
-      // Contract creation — to is null, handle as first-class deployment
-      if (!to) {
-        const [receipt, ethPrice] = await Promise.all([
-          fetchTransactionReceipt(input.trim(), chain),
-          fetchEthPrice(),
-        ]);
+      // Debug log — visible in Vercel Functions tab
+      console.log("TX fetch result:", JSON.stringify({
+        from: txRaw?.from,
+        to: txRaw?.to,
+        value: txRaw?.value,
+        inputLength: (txRaw?.input ?? txRaw?.data ?? "").length,
+        receiptContractAddress: receipt?.contractAddress,
+        receiptFrom: receipt?.from,
+        receiptGasUsed: receipt?.gasUsed,
+      }));
 
-        const deployedAddress = receipt?.contractAddress ?? null;
-        const gasUsed = receipt?.gasUsed
+      // Detect contract creation: receipt.contractAddress is the definitive signal
+      const isContractCreation =
+        receipt?.contractAddress != null &&
+        receipt.contractAddress !== "" &&
+        receipt.contractAddress !== "0x";
+
+      if (isContractCreation) {
+        // Extract all fields with explicit fallbacks
+        let deployerAddress: string | null =
+          txRaw?.from ?? receipt?.from ?? null;
+
+        const inputData: string = txRaw?.input ?? txRaw?.data ?? "0x";
+        let bytecodeSize: number =
+          inputData && inputData !== "0x"
+            ? Math.floor((inputData.length - 2) / 2)
+            : 0;
+
+        const rawValue: string = txRaw?.value ?? "0x0";
+        const valueInWei = BigInt(rawValue);
+        const valueInEth = Number(valueInWei) / 1e18;
+        const valueSpentEth = valueInEth.toFixed(6);
+        const valueSpentUsd = (valueInEth * ethPrice).toFixed(2);
+
+        let deployedAddress: string | null = receipt.contractAddress;
+
+        const gasUsed: string | null = receipt?.gasUsed
           ? parseInt(receipt.gasUsed, 16).toLocaleString()
           : null;
-        const bytecodeSize = tx.input && tx.input.length > 2
-          ? Math.floor((tx.input.length - 2) / 2)
-          : 0;
-        const valueWei = BigInt(tx.value ?? "0x0");
-        const valueSpentEth = (Number(valueWei) / 1e18).toFixed(6);
-        const valueSpentUsd = (parseFloat(valueSpentEth) * ethPrice).toFixed(2);
 
-        // Pre-compute flags before calling AI
+        // Etherscan fallback — if deployer or bytecode still missing
+        if (!deployerAddress || bytecodeSize === 0 || !deployedAddress) {
+          console.log("Falling back to Etherscan API for missing deployment fields");
+          const CHAIN_IDS: Record<string, number> = {
+            ethereum: 1, base: 8453, polygon: 137, arbitrum: 42161, optimism: 10,
+          };
+          const chainId = CHAIN_IDS[chain] ?? 1;
+          const apiKey = process.env.ETHERSCAN_API_KEY ?? "";
+
+          if (!deployerAddress || bytecodeSize === 0) {
+            try {
+              const txUrl = `https://api.etherscan.io/v2/api?chainid=${chainId}&module=proxy&action=eth_getTransactionByHash&txhash=${input.trim()}&apikey=${apiKey}`;
+              const txRes = await fetch(txUrl, { cache: "no-store" });
+              const txJson = await txRes.json();
+              const ethTx = txJson?.result;
+              if (ethTx) {
+                deployerAddress = deployerAddress ?? ethTx.from ?? null;
+                const inputFallback: string = ethTx.input ?? ethTx.data ?? "0x";
+                if (bytecodeSize === 0 && inputFallback !== "0x") {
+                  bytecodeSize = Math.floor((inputFallback.length - 2) / 2);
+                }
+              }
+            } catch (err) {
+              console.error("Etherscan tx fallback failed:", err);
+            }
+          }
+
+          if (!deployedAddress) {
+            try {
+              const rcptUrl = `https://api.etherscan.io/v2/api?chainid=${chainId}&module=proxy&action=eth_getTransactionReceipt&txhash=${input.trim()}&apikey=${apiKey}`;
+              const rcptRes = await fetch(rcptUrl, { cache: "no-store" });
+              const rcptJson = await rcptRes.json();
+              deployedAddress = rcptJson?.result?.contractAddress ?? null;
+            } catch (err) {
+              console.error("Etherscan receipt fallback failed:", err);
+            }
+          }
+        }
+
+        console.log("Deployment resolved:", { deployerAddress, deployedAddress, bytecodeSize, valueSpentEth, gasUsed });
+
+        // Pre-compute flags
         const preComputedFlags: string[] = [];
-        if (parseFloat(valueSpentEth) > 5) {
+        if (valueInEth > 5) {
           preComputedFlags.push("Large ETH value sent at deployment — high attention warranted");
-        } else if (parseFloat(valueSpentEth) > 0.1) {
+        } else if (valueInEth > 0.1) {
           preComputedFlags.push("Contract received ETH during deployment — verify this was intentional");
         }
-        if (bytecodeSize < 100 && bytecodeSize > 0) {
+        if (bytecodeSize > 0 && bytecodeSize < 100) {
           preComputedFlags.push("Very small contract — could be a minimal proxy, test contract, or honeypot shell");
         }
 
@@ -175,7 +240,7 @@ export async function POST(req: NextRequest) {
           deploymentExplanation = await analyzeContractDeployment({
             txHash: input.trim(),
             chain,
-            deployerAddress: tx.from ?? "unknown",
+            deployerAddress: deployerAddress ?? "unknown",
             deployedAddress,
             bytecodeSize,
             valueSpent: valueSpentEth,
@@ -184,16 +249,29 @@ export async function POST(req: NextRequest) {
           });
         } catch (err) {
           console.error("AI call failed (deployment):", err);
+          const shortDeployer = deployerAddress
+            ? `${deployerAddress.slice(0, 6)}...${deployerAddress.slice(-4)}`
+            : "unknown address";
           deploymentExplanation = {
-            action: "A new smart contract was deployed.",
-            what_happened: "Someone published a new smart contract to the blockchain. We couldn't generate a full AI explanation right now — check the details below.",
-            deployer_context: "Deployer address details unavailable.",
-            contract_size_context: `Contract is ${bytecodeSize} bytes.`,
-            eth_spent_context: parseFloat(valueSpentEth) > 0 ? `${valueSpentEth} ETH was sent at deployment.` : "No ETH was sent during deployment.",
+            action: `A new smart contract was deployed to ${chain}.`,
+            what_happened: `A new smart contract was published to the ${chain} blockchain by ${shortDeployer}. The contract is ${bytecodeSize > 0 ? `${bytecodeSize} bytes` : "an unknown size"} in bytecode. Contract deployments publish executable code that anyone can interact with.`,
+            deployer_context: deployerAddress
+              ? `Deployed by ${deployerAddress}.`
+              : "Deployer address could not be retrieved.",
+            contract_size_context: bytecodeSize > 10000
+              ? "Large contract — likely complex protocol logic with multiple functions."
+              : bytecodeSize > 1000
+              ? "Medium-sized contract — typical for tokens or simple DeFi contracts."
+              : bytecodeSize > 0
+              ? "Small contract — could be a minimal proxy, simple token, or test contract."
+              : "Contract size unavailable from on-chain data.",
+            eth_spent_context: valueInEth > 0
+              ? `${valueSpentEth} ETH was sent during deployment — contracts that receive ETH at creation warrant extra scrutiny.`
+              : "No ETH was sent during deployment — this is normal for most contracts.",
             risk_level: "MEDIUM",
-            risk_reason: "AI analysis unavailable. Review manually.",
+            risk_reason: "Contract deployments should always be reviewed — verify the source code on Etherscan before interacting.",
             red_flags: preComputedFlags,
-            one_liner: "Contract deployment — AI analysis unavailable.",
+            one_liner: `New contract deployed to ${chain} by ${shortDeployer}.`,
           };
         }
 
@@ -202,7 +280,7 @@ export async function POST(req: NextRequest) {
           warning: null,
           decoded: {
             method: "Contract Deployment",
-            params: { deployer: tx.from, deployedContract: deployedAddress },
+            params: { deployer: deployerAddress, deployedContract: deployedAddress },
             protocol: null,
             contractVerified: false,
             valueEth: valueSpentEth,
@@ -210,12 +288,12 @@ export async function POST(req: NextRequest) {
           },
           explanation: { mode: "contract-deployment", ...deploymentExplanation },
           raw: {
-            calldata: tx.input ?? "0x",
+            calldata: inputData.slice(0, 200),
             to: deployedAddress ?? "pending",
             chain,
           },
           deployment: {
-            deployerAddress: tx.from ?? "unknown",
+            deployerAddress: deployerAddress ?? "unknown",
             deployedAddress,
             bytecodeSize,
             valueSpentEth,
@@ -225,6 +303,18 @@ export async function POST(req: NextRequest) {
           },
         });
       }
+
+      // Not a contract creation — reuse txRaw already fetched above
+      if (!txRaw) {
+        return NextResponse.json(
+          { error: "Transaction not found. Check the hash and the selected chain — make sure you picked the right network (ETH, Base, Polygon…)." },
+          { status: 404 }
+        );
+      }
+      to = txRaw.to ?? null;
+      from = txRaw.from ?? null;
+      calldata = txRaw.input ?? txRaw.data ?? "0x";
+      valueHex = txRaw.value ?? "0x0";
     } else if (inputType === "address") {
       // Address-only: fetch contract ABI and show what this contract does
       to = input.trim();
