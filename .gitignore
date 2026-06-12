@@ -44,3 +44,6 @@ next-env.d.ts
 # dev artifacts
 /screenshots
 screenshot-app.mjs
+
+# local design-skill tooling, not app code
+/skills

@@ -86,6 +86,16 @@ export default function Hero({ onDecode, onDemo, loading }: HeroProps) {
 
   const canSubmit = !loading && detected !== "empty" && input.trim().length > 0;
 
+  // Enter submits (the input is a textarea, so without this Enter just adds a
+  // newline and nothing happens). Shift+Enter still inserts a newline for
+  // multi-line calldata.
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (canSubmit) onDecode(input.trim(), chain, detected);
+    }
+  };
+
   return (
     <div className="flex flex-col items-center w-full">
       {/* Nav */}
@@ -106,7 +116,7 @@ export default function Hero({ onDecode, onDemo, loading }: HeroProps) {
               <path d="M8 11V7a4 4 0 018 0v4" stroke="#00ff88" strokeWidth="1.8" strokeLinecap="round"/>
             </svg>
           </div>
-          <span className="font-semibold text-[15px] tracking-tight" style={{ color: "#f1f0f5" }}>DeCryp</span>
+          <span className="font-display font-bold text-[15px] tracking-tight" style={{ color: "#f1f0f5" }}>DeCryp</span>
           <span
             className="text-[9px] font-mono px-1.5 py-0.5 rounded tracking-widest"
             style={{ background: "rgba(0,255,136,0.08)", border: "1px solid rgba(0,255,136,0.2)", color: "#00ff88" }}
@@ -127,18 +137,16 @@ export default function Hero({ onDecode, onDemo, loading }: HeroProps) {
         transition={{ duration: 0.7, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
         className="text-center mt-20 mb-10 px-2"
       >
-        <p className="text-[11px] font-mono tracking-[0.2em] uppercase mb-6" style={{ color: "var(--text-tertiary)" }}>
-          Transaction Intelligence
-        </p>
-        <h1 className="text-5xl sm:text-[64px] font-bold leading-[1.05] tracking-tight mb-5 max-w-[720px]">
+        <div className="flex items-center justify-center gap-2 mb-6">
+          <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: "#00ff88", boxShadow: "0 0 8px #00ff88" }} />
+          <p className="text-[11px] font-mono tracking-[0.2em] uppercase" style={{ color: "var(--text-tertiary)" }}>
+            On-chain Transaction Intelligence
+          </p>
+        </div>
+        <h1 className="font-display text-5xl sm:text-[64px] font-bold leading-[1.05] tracking-tight mb-5 max-w-[720px]" style={{ textWrap: "balance" }}>
           <span style={{ color: "#f1f0f5" }}>Know what you&apos;re</span>
           <br />
-          <span style={{
-            background: "linear-gradient(135deg, #00ff88 0%, #00d4ff 60%)",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-            backgroundClip: "text",
-          }}>
+          <span className="text-glow-green" style={{ color: "#00ff88" }}>
             signing.
           </span>
         </h1>
@@ -156,18 +164,40 @@ export default function Hero({ onDecode, onDemo, loading }: HeroProps) {
         className="w-full max-w-[640px]"
       >
         <div
-          className="rounded-2xl transition-all duration-300"
+          className="rounded-2xl overflow-hidden transition-all duration-300"
           style={{
-            background: "rgba(15,15,23,0.8)",
+            background: "rgba(13,13,20,0.85)",
             backdropFilter: "blur(24px)",
             border: focused
               ? "1px solid rgba(0,255,136,0.35)"
               : "1px solid rgba(255,255,255,0.07)",
             boxShadow: focused
-              ? "0 0 0 3px rgba(0,255,136,0.06), 0 0 48px rgba(0,255,136,0.07)"
+              ? "0 0 0 3px rgba(0,255,136,0.06), 0 0 64px rgba(0,255,136,0.09)"
               : "0 8px 40px rgba(0,0,0,0.4)",
           }}
         >
+          {/* Terminal title bar */}
+          <div
+            className="flex items-center gap-2 px-4 py-2.5"
+            style={{ borderBottom: "1px solid rgba(255,255,255,0.05)", background: "rgba(255,255,255,0.02)" }}
+          >
+            <div className="w-2.5 h-2.5 rounded-full" style={{ background: "#ef4444", opacity: 0.6 }} />
+            <div className="w-2.5 h-2.5 rounded-full" style={{ background: "#f59e0b", opacity: 0.6 }} />
+            <div className="w-2.5 h-2.5 rounded-full" style={{ background: "#00ff88", opacity: 0.6 }} />
+            <span className="ml-3 text-[10px] font-mono tracking-wider" style={{ color: "var(--text-tertiary)" }}>
+              decryp — universal decoder
+            </span>
+            <div className="ml-auto flex items-center gap-1.5">
+              <div
+                className="w-1.5 h-1.5 rounded-full"
+                style={{ background: loading ? "#f59e0b" : "#00ff88", boxShadow: `0 0 6px ${loading ? "#f59e0b" : "#00ff88"}` }}
+              />
+              <span className="text-[9px] font-mono tracking-widest" style={{ color: loading ? "#f59e0b" : "#00ff88" }}>
+                {loading ? "BUSY" : "READY"}
+              </span>
+            </div>
+          </div>
+
           {/* Detection badge row */}
           <div className="px-4 pt-3 pb-0 flex items-center gap-2 min-h-[28px]">
             <AnimatePresence mode="wait">
@@ -196,12 +226,27 @@ export default function Hero({ onDecode, onDemo, loading }: HeroProps) {
                 </motion.div>
               )}
             </AnimatePresence>
+            <AnimatePresence>
+              {detected !== "empty" && !loading && (
+                <motion.span
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2, delay: 0.15 }}
+                  className="ml-auto text-[9px] font-mono tracking-wider"
+                  style={{ color: "var(--text-tertiary)" }}
+                >
+                  ↵ Enter to decode
+                </motion.span>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* Textarea */}
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             placeholder={TYPE_META.empty.placeholder}
@@ -310,19 +355,101 @@ export default function Hero({ onDecode, onDemo, loading }: HeroProps) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.55, duration: 0.6 }}
-        className="flex items-center gap-10 mt-20 mb-4"
+        className="flex items-start justify-center gap-8 sm:gap-12 mt-20 mb-10 flex-wrap"
       >
         {[
-          { label: "Any Input", sub: "Hash · Address · Calldata" },
-          { label: "Risk Score", sub: "LOW → DANGER, instantly" },
-          { label: "Plain English", sub: "No jargon, no confusion" },
+          {
+            label: "Any Input",
+            sub: "Hash · Address · Calldata",
+            icon: (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                <path d="M4 7V5a1 1 0 011-1h2M17 4h2a1 1 0 011 1v2M20 17v2a1 1 0 01-1 1h-2M7 20H5a1 1 0 01-1-1v-2" stroke="#00d4ff" strokeWidth="1.8" strokeLinecap="round"/>
+                <path d="M8 12h8" stroke="#00d4ff" strokeWidth="1.8" strokeLinecap="round"/>
+              </svg>
+            ),
+          },
+          {
+            label: "Risk Score",
+            sub: "LOW → DANGER, instantly",
+            icon: (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                <path d="M12 3l8 4v5c0 4.5-3.2 7.6-8 9-4.8-1.4-8-4.5-8-9V7l8-4z" stroke="#00ff88" strokeWidth="1.8" strokeLinejoin="round"/>
+                <path d="M9 12l2 2 4-4" stroke="#00ff88" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            ),
+          },
+          {
+            label: "Plain English",
+            sub: "No jargon, no confusion",
+            icon: (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                <path d="M21 12a8 8 0 01-8 8H4l1.5-3A8 8 0 1121 12z" stroke="#a78bfa" strokeWidth="1.8" strokeLinejoin="round"/>
+                <path d="M9 11h6M9 14h3" stroke="#a78bfa" strokeWidth="1.8" strokeLinecap="round"/>
+              </svg>
+            ),
+          },
         ].map((item, i) => (
-          <div key={i} className="flex flex-col items-center gap-1 text-center">
+          <div key={i} className="flex flex-col items-center gap-1.5 text-center">
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center mb-0.5"
+              style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}
+            >
+              {item.icon}
+            </div>
             <span className="text-xs font-semibold" style={{ color: "#f1f0f5" }}>{item.label}</span>
             <span className="text-[10px] font-mono" style={{ color: "var(--text-tertiary)" }}>{item.sub}</span>
           </div>
         ))}
       </motion.div>
+
+      {/* Protocol marquee */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.7, duration: 0.8 }}
+        className="w-full marquee-mask overflow-hidden"
+        aria-hidden="true"
+      >
+        <div className="marquee-track items-center gap-0 py-2">
+          {[0, 1].map((copy) => (
+            <div key={copy} className="flex items-center shrink-0">
+              {["UNISWAP", "AAVE", "LIDO", "OPENSEA", "CURVE", "ENS", "1INCH", "COMPOUND", "MAKER", "SUSHI", "BLUR", "SAFE"].map((p) => (
+                <span key={`${copy}-${p}`} className="flex items-center shrink-0">
+                  <span className="text-[10px] font-mono tracking-[0.22em]" style={{ color: "var(--text-tertiary)" }}>{p}</span>
+                  <span className="mx-5 text-[8px]" style={{ color: "rgba(0,255,136,0.3)" }}>◆</span>
+                </span>
+              ))}
+            </div>
+          ))}
+        </div>
+      </motion.div>
+
+      {/* Footer */}
+      <motion.footer
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.8, duration: 0.6 }}
+        className="w-full flex items-center justify-between mt-12 pt-5"
+        style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}
+      >
+        <span className="text-[10px] font-mono" style={{ color: "var(--text-tertiary)" }}>
+          © {new Date().getFullYear()} DeCryp
+        </span>
+        <div className="flex items-center gap-4">
+          <span className="text-[10px] font-mono" style={{ color: "var(--text-tertiary)" }}>
+            ETH · BASE · MATIC · ARB · OP
+          </span>
+          <a
+            href="https://github.com/imayushx/DeCryp"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[10px] font-mono transition-colors duration-200 hover:text-[#00ff88]"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            GitHub ↗
+          </a>
+        </div>
+      </motion.footer>
     </div>
   );
 }

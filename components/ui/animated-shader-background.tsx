@@ -25,7 +25,14 @@ const AnimatedShaderBackground = () => {
 
     const scene = new THREE.Scene();
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-    const renderer = new THREE.WebGLRenderer({ antialias: !isMobile, alpha: true });
+    // WebGL context creation throws on unsupported devices/drivers — without
+    // this guard the whole page crashes instead of falling back to the CSS bg.
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: !isMobile, alpha: true });
+    } catch {
+      return;
+    }
     renderer.setSize(container.offsetWidth, container.offsetHeight);
     renderer.setPixelRatio(pixelRatio);
     container.appendChild(renderer.domElement);
@@ -91,9 +98,9 @@ const AnimatedShaderBackground = () => {
               + vec2(sin(iTime * 3.0 + i) * 0.003, cos(iTime * 3.5 - i) * 0.003);
             float tailNoise = fbm(v + vec2(iTime * 0.5, i)) * 0.3 * (1.0 - (i / iIter));
             vec4 auroraColors = vec4(
-              0.1 + 0.3 * sin(i * 0.2 + iTime * 0.4),
-              0.3 + 0.5 * cos(i * 0.3 + iTime * 0.5),
-              0.7 + 0.3 * sin(i * 0.4 + iTime * 0.3),
+              0.05 + 0.15 * sin(i * 0.2 + iTime * 0.4),
+              0.55 + 0.4 * cos(i * 0.3 + iTime * 0.5),
+              0.45 + 0.35 * sin(i * 0.4 + iTime * 0.3),
               1.0
             );
             vec4 contrib = auroraColors * exp(sin(i * i + iTime * 0.8)) / length(max(v, vec2(v.x * f * 0.015, v.y * 1.5)));
@@ -148,7 +155,19 @@ const AnimatedShaderBackground = () => {
     };
   }, []);
 
-  return <div ref={containerRef} className="absolute inset-0 w-full h-full" />;
+  return (
+    <div ref={containerRef} className="absolute inset-0 w-full h-full">
+      {/* Static aurora fallback — visible when WebGL is skipped or unavailable;
+          the canvas renders on top of it otherwise */}
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(ellipse 80% 55% at 50% 15%, rgba(0,255,136,0.07), transparent 65%), radial-gradient(ellipse 55% 45% at 75% 5%, rgba(0,212,255,0.06), transparent 60%), radial-gradient(ellipse 50% 40% at 25% 10%, rgba(168,85,247,0.04), transparent 60%)",
+        }}
+      />
+    </div>
+  );
 };
 
 export default AnimatedShaderBackground;

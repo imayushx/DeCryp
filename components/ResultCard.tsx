@@ -296,63 +296,113 @@ function RawDetails({ decoded, raw, open, onToggle }: {
   );
 }
 
+// ─── Shared URL copy button — appears in every result type ───────────────────
+
+function ShareLinkButton() {
+  const [copied, setCopied] = useState(false);
+
+  function handleShare() {
+    const url = typeof window !== "undefined" ? window.location.href : "https://de-cryp.vercel.app";
+    navigator.clipboard.writeText(url).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <button
+      onClick={handleShare}
+      className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-mono text-sm transition-all duration-200"
+      style={{
+        background: "rgba(255,255,255,0.02)",
+        border: `1px solid ${copied ? "rgba(0,255,136,0.3)" : "rgba(31,31,31,1)"}`,
+        color: copied ? "#00ff88" : "#888888",
+      }}
+      onMouseEnter={(e) => { if (!copied) { e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)"; e.currentTarget.style.color = "#ffffff"; } }}
+      onMouseLeave={(e) => { if (!copied) { e.currentTarget.style.borderColor = "rgba(31,31,31,1)"; e.currentTarget.style.color = "#888888"; } }}
+    >
+      {copied ? (
+        <>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+            <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          Copied!
+        </>
+      ) : (
+        <>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+            <rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" strokeWidth="2"/>
+            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+          </svg>
+          Share Result
+        </>
+      )}
+    </button>
+  );
+}
+
 // ─── Action buttons ───────────────────────────────────────────────────────────
 
 function PreSignActions({ onReset }: { onReset: () => void }) {
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.48 }} className="grid grid-cols-2 gap-3 pt-1">
-      <button
-        onClick={onReset}
-        className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-mono text-sm font-semibold transition-all duration-200"
-        style={{ background: "rgba(0,255,136,0.06)", border: "1px solid rgba(0,255,136,0.25)", color: "#00ff88" }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(0,255,136,0.12)"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(0,255,136,0.06)"; }}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-        I&apos;ll Sign It
-      </button>
-      <button
-        onClick={onReset}
-        className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-mono text-sm font-semibold transition-all duration-200"
-        style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.25)", color: "#ef4444" }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.12)"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.06)"; }}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
-        I&apos;ll Cancel
-      </button>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.48 }} className="space-y-2 pt-1">
+      <div className="grid grid-cols-2 gap-3">
+        <button
+          onClick={onReset}
+          className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-mono text-sm font-semibold transition-all duration-200"
+          style={{ background: "rgba(0,255,136,0.06)", border: "1px solid rgba(0,255,136,0.25)", color: "#00ff88" }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(0,255,136,0.12)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(0,255,136,0.06)"; }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          I&apos;ll Sign It
+        </button>
+        <button
+          onClick={onReset}
+          className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-mono text-sm font-semibold transition-all duration-200"
+          style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.25)", color: "#ef4444" }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.12)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.06)"; }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
+          I&apos;ll Cancel
+        </button>
+      </div>
+      <ShareLinkButton />
     </motion.div>
   );
 }
 
 function PostSignActions({ onReset, onShare }: { onReset: () => void; onShare: () => void }) {
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.48 }} className="flex gap-3 pt-1">
-      <button
-        onClick={onReset}
-        className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-mono text-sm transition-all duration-200"
-        style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", color: "var(--text-secondary)" }}
-        onMouseEnter={(e) => { e.currentTarget.style.borderColor = "rgba(0,255,136,0.3)"; e.currentTarget.style.color = "#00ff88"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; e.currentTarget.style.color = "var(--text-secondary)"; }}
-      >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M19 12H5M12 5l-7 7 7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-        Decode Another
-      </button>
-      <button
-        onClick={onShare}
-        className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-mono text-sm transition-all duration-200"
-        style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", color: "var(--text-tertiary)" }}
-        onMouseEnter={(e) => { e.currentTarget.style.borderColor = "rgba(0,255,136,0.25)"; e.currentTarget.style.color = "#00ff88"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = "var(--text-tertiary)"; }}
-      >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
-          <circle cx="18" cy="5" r="3" stroke="currentColor" strokeWidth="2"/>
-          <circle cx="6" cy="12" r="3" stroke="currentColor" strokeWidth="2"/>
-          <circle cx="18" cy="19" r="3" stroke="currentColor" strokeWidth="2"/>
-          <path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98" stroke="currentColor" strokeWidth="2"/>
-        </svg>
-        Share
-      </button>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.48 }} className="space-y-2 pt-1">
+      <ShareLinkButton />
+      <div className="flex gap-3">
+        <button
+          onClick={onReset}
+          className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-mono text-sm transition-all duration-200"
+          style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", color: "var(--text-secondary)" }}
+          onMouseEnter={(e) => { e.currentTarget.style.borderColor = "rgba(0,255,136,0.3)"; e.currentTarget.style.color = "#00ff88"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; e.currentTarget.style.color = "var(--text-secondary)"; }}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M19 12H5M12 5l-7 7 7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          Decode Another
+        </button>
+        <button
+          onClick={onShare}
+          className="flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl font-mono text-sm transition-all duration-200"
+          style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", color: "var(--text-tertiary)" }}
+          onMouseEnter={(e) => { e.currentTarget.style.borderColor = "rgba(0,255,136,0.25)"; e.currentTarget.style.color = "#00ff88"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = "var(--text-tertiary)"; }}
+          title="Screenshot & share"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+            <circle cx="18" cy="5" r="3" stroke="currentColor" strokeWidth="2"/>
+            <circle cx="6" cy="12" r="3" stroke="currentColor" strokeWidth="2"/>
+            <circle cx="18" cy="19" r="3" stroke="currentColor" strokeWidth="2"/>
+            <path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98" stroke="currentColor" strokeWidth="2"/>
+          </svg>
+        </button>
+      </div>
     </motion.div>
   );
 }
@@ -420,7 +470,7 @@ export default function ResultCard({ decoded, explanation, raw, deployment, onRe
         <Panel delay={0.08}>
           <div className="px-7 py-7 relative text-center overflow-hidden">
             <div className="absolute inset-0 pointer-events-none" style={{ background: "radial-gradient(ellipse 70% 50% at 50% 0%, rgba(168,85,247,0.06) 0%, transparent 70%)" }} />
-            <p className="relative text-2xl font-bold leading-snug tracking-tight" style={{ color: "#f1f0f5" }}>{exp.one_liner}</p>
+            <p className="relative font-display text-2xl font-bold leading-snug tracking-tight" style={{ color: "#f1f0f5", textWrap: "balance" }}>{exp.one_liner}</p>
           </div>
         </Panel>
 
@@ -491,44 +541,47 @@ export default function ResultCard({ decoded, explanation, raw, deployment, onRe
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.42 }}
-          className="grid grid-cols-2 gap-3"
+          className="space-y-2"
         >
-          {deployment.deployedAddress && (
-            <button
-              onClick={() => onInspect(deployment.deployedAddress!, raw.chain)}
-              className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-mono text-sm font-semibold transition-all duration-200"
-              style={{ background: "rgba(168,85,247,0.07)", border: "1px solid rgba(168,85,247,0.25)", color: "#a855f7" }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(168,85,247,0.14)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(168,85,247,0.07)"; }}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2"/><path d="M20 20l-3-3" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
-              Inspect Contract →
-            </button>
-          )}
-          <a
-            href={`${explorerTxBase}/${deployment.txHash}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-mono text-sm transition-all duration-200"
-            style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", color: "var(--text-secondary)" }}
-            onMouseEnter={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.16)"; e.currentTarget.style.color = "#f1f0f5"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; e.currentTarget.style.color = "var(--text-secondary)"; }}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-            View on Explorer
-          </a>
-          {!deployment.deployedAddress && (
-            <button
-              onClick={onReset}
+          <ShareLinkButton />
+          <div className="grid grid-cols-2 gap-3">
+            {deployment.deployedAddress && (
+              <button
+                onClick={() => onInspect(deployment.deployedAddress!, raw.chain)}
+                className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-mono text-sm font-semibold transition-all duration-200"
+                style={{ background: "rgba(168,85,247,0.07)", border: "1px solid rgba(168,85,247,0.25)", color: "#a855f7" }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(168,85,247,0.14)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(168,85,247,0.07)"; }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2"/><path d="M20 20l-3-3" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+                Inspect Contract →
+              </button>
+            )}
+            <a
+              href={`${explorerTxBase}/${deployment.txHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
               className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-mono text-sm transition-all duration-200"
               style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", color: "var(--text-secondary)" }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = "rgba(0,255,136,0.3)"; e.currentTarget.style.color = "#00ff88"; }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.16)"; e.currentTarget.style.color = "#f1f0f5"; }}
               onMouseLeave={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; e.currentTarget.style.color = "var(--text-secondary)"; }}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M19 12H5M12 5l-7 7 7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              Decode Another
-            </button>
-          )}
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              View on Explorer
+            </a>
+            {!deployment.deployedAddress && (
+              <button
+                onClick={onReset}
+                className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-mono text-sm transition-all duration-200"
+                style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", color: "var(--text-secondary)" }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = "rgba(0,255,136,0.3)"; e.currentTarget.style.color = "#00ff88"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; e.currentTarget.style.color = "var(--text-secondary)"; }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M19 12H5M12 5l-7 7 7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                Decode Another
+              </button>
+            )}
+          </div>
         </motion.div>
       </motion.div>
     );
@@ -547,7 +600,7 @@ export default function ResultCard({ decoded, explanation, raw, deployment, onRe
         <Panel delay={0.08}>
           <div className="px-7 py-7 relative text-center overflow-hidden">
             <div className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(ellipse 70% 50% at 50% 0%, ${riskColor}06 0%, transparent 70%)` }} />
-            <p className="relative text-2xl font-bold leading-snug tracking-tight" style={{ color: "#f1f0f5" }}>{exp.one_liner}</p>
+            <p className="relative font-display text-2xl font-bold leading-snug tracking-tight" style={{ color: "#f1f0f5", textWrap: "balance" }}>{exp.one_liner}</p>
             <div className="mt-3 flex items-center justify-center gap-2">
               <div className="w-1.5 h-1.5 rounded-full" style={{ background: riskColor }} />
               <span className="text-xs font-mono" style={{ color: "var(--text-tertiary)" }}>
@@ -616,7 +669,7 @@ export default function ResultCard({ decoded, explanation, raw, deployment, onRe
       <Panel delay={0.08}>
         <div className="px-7 py-7 relative text-center overflow-hidden">
           <div className="absolute inset-0 pointer-events-none" style={{ background: "radial-gradient(ellipse 70% 50% at 50% 0%, rgba(74,158,255,0.05) 0%, transparent 70%)" }} />
-          <p className="relative text-2xl font-bold leading-snug tracking-tight" style={{ color: "#f1f0f5" }}>{exp.one_liner}</p>
+          <p className="relative font-display text-2xl font-bold leading-snug tracking-tight" style={{ color: "#f1f0f5", textWrap: "balance" }}>{exp.one_liner}</p>
         </div>
       </Panel>
 

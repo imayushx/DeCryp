@@ -14,6 +14,17 @@ function timeout() {
   return (AbortSignal as any).timeout(TIMEOUT_MS);
 }
 
+// Etherscan proxy endpoints put error strings in `result` when the API key is
+// missing or rate-limited (e.g. "Max calls per sec rate limit reached").
+// Treating those as a transaction object yields all-null fields downstream, so
+// only accept real objects.
+function asResultObject(result: unknown): Record<string, string> | null {
+  if (result && typeof result === "object" && !Array.isArray(result)) {
+    return result as Record<string, string>;
+  }
+  return null;
+}
+
 export async function fetchABI(address: string, chain: string): Promise<{ abi: string | null; verified: boolean }> {
   const chainId = CHAIN_IDS[chain] ?? 1;
   const apiKey = process.env.ETHERSCAN_API_KEY ?? "";
@@ -44,12 +55,13 @@ export async function fetchTransaction(txHash: string, chain: string): Promise<{
   try {
     const res = await fetch(url, { cache: "no-store", signal: timeout() });
     const json = await res.json();
-    if (json.result) {
+    const tx = asResultObject(json.result);
+    if (tx) {
       return {
-        to: json.result.to ?? null,
-        from: json.result.from ?? null,
-        input: json.result.input ?? null,
-        value: json.result.value ?? "0x0",
+        to: tx.to ?? null,
+        from: tx.from ?? null,
+        input: tx.input ?? null,
+        value: tx.value ?? "0x0",
       };
     }
     return null;
@@ -97,12 +109,13 @@ export async function fetchTransactionReceipt(txHash: string, chain: string): Pr
   try {
     const res = await fetch(url, { cache: "no-store", signal: timeout() });
     const json = await res.json();
-    if (json.result) {
+    const receipt = asResultObject(json.result);
+    if (receipt) {
       return {
-        contractAddress: json.result.contractAddress ?? null,
-        gasUsed: json.result.gasUsed ?? null,
-        from: json.result.from ?? null,
-        blockNumber: json.result.blockNumber ?? null,
+        contractAddress: receipt.contractAddress ?? null,
+        gasUsed: receipt.gasUsed ?? null,
+        from: receipt.from ?? null,
+        blockNumber: receipt.blockNumber ?? null,
       };
     }
     return null;
@@ -120,7 +133,7 @@ export async function fetchTransactionRaw(txHash: string, chain: string): Promis
   try {
     const res = await fetch(url, { cache: "no-store", signal: timeout() });
     const json = await res.json();
-    return json.result ?? null;
+    return asResultObject(json.result);
   } catch {
     return null;
   }
