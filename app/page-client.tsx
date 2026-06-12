@@ -66,11 +66,12 @@ export default function HomeClient({ initialTx, initialChain, isDemo }: HomeClie
 
     const mode = demo ? "pre-sign" : deriveMode(detectedType);
 
-    // Write shareable URL — only for real inputs, not demo
+    // Write shareable URL — only for real inputs, not demo. The chain is added
+    // after the server detects it.
     if (!demo && input.trim()) {
       const params = new URLSearchParams();
       params.set("tx", input.trim());
-      params.set("chain", chain);
+      if (chain !== "auto") params.set("chain", chain);
       window.history.replaceState(null, "", `?${params.toString()}`);
     }
 
@@ -87,6 +88,14 @@ export default function HomeClient({ initialTx, initialChain, isDemo }: HomeClie
         setErrorMsg(data.error ?? "Something went wrong.");
         setState("error");
         return;
+      }
+
+      // Pin the detected chain into the share URL so shared links skip detection
+      if (!demo && input.trim() && data.raw?.chain) {
+        const params = new URLSearchParams();
+        params.set("tx", input.trim());
+        params.set("chain", data.raw.chain);
+        window.history.replaceState(null, "", `?${params.toString()}`);
       }
 
       setResult(data);
@@ -125,7 +134,7 @@ export default function HomeClient({ initialTx, initialChain, isDemo }: HomeClie
         /^0x[0-9a-fA-F]{64}$/.test(initialTx) ? "txhash"
         : /^0x[0-9a-fA-F]{40}$/.test(initialTx) ? "address"
         : "calldata";
-      decode(initialTx, initialChain ?? "ethereum", detectedType, false);
+      decode(initialTx, initialChain ?? "auto", detectedType, false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -159,7 +168,7 @@ export default function HomeClient({ initialTx, initialChain, isDemo }: HomeClie
               <div className="relative z-10 px-4 pb-20">
                 <div className="max-w-[640px] mx-auto">
                   <Hero
-                    onDecode={(input, chain, detectedType) => decode(input, chain, detectedType, false)}
+                    onDecode={(input, detectedType) => decode(input, "auto", detectedType, false)}
                     onDemo={() => decode("", "ethereum", "empty", true)}
                     loading={state === "loading"}
                   />

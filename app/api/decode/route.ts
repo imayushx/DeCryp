@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export const maxDuration = 60;
-import { fetchABI, fetchTransactionReceipt, fetchTransactionRaw, fetchTokenInfo, fetchEthPrice } from "@/lib/etherscan";
+import { fetchABI, fetchTransactionReceipt, fetchTransactionRaw, fetchTokenInfo, fetchEthPrice, findTransactionChain, findAddressChain, rpcGetTransactionRaw, rpcGetTransactionReceipt } from "@/lib/etherscan";
 import { decodeCalldata, detectInputType } from "@/lib/decoder";
 import { getProtocolName } from "@/lib/protocols";
 import { analyzeBeforeSigning, decodeCompletedTransaction, analyzeContractDeployment } from "@/lib/ai";
@@ -93,9 +93,9 @@ function postSignFallback(
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { input, chain = "ethereum", demo, mode = "pre-sign" } = body as {
+    const { input, chain: requestedChain = "auto", demo, mode = "pre-sign" } = body as {
       input: string;
-      chain: string;
+      chain?: string;
       demo?: boolean;
       mode?: Mode;
     };
@@ -109,6 +109,29 @@ export async function POST(req: NextRequest) {
     }
 
     const inputType = detectInputType(input.trim());
+
+    // Auto chain detection — probe all supported networks so users never have
+    // to know what chain their transaction is on
+    let chain = requestedChain;
+    if (chain === "auto" || !chain) {
+      if (inputType === "txhash") {
+        const detected = await findTransactionChain(input.trim());
+        if (!detected) {
+          return NextResponse.json(
+            {
+              error:
+                "We searched Ethereum, Base, Arbitrum, Polygon and Optimism and couldn't find this transaction. Double-check you copied the whole ID (it should be 66 characters starting with 0x).",
+            },
+            { status: 404 }
+          );
+        }
+        chain = detected;
+      } else if (inputType === "address") {
+        chain = (await findAddressChain(input.trim())) ?? "ethereum";
+      } else {
+        chain = "ethereum";
+      }
+    }
 
     // Mode-specific input validation
     if (mode === "post-sign" && inputType !== "txhash") {
@@ -130,15 +153,20 @@ export async function POST(req: NextRequest) {
 
     if (inputType === "txhash") {
       // Fetch tx + receipt in parallel — receipt is needed to detect contract creation
-      const [txRaw, receipt, ethPrice] = await Promise.all([
+      let [txRaw, receipt] = await Promise.all([
         fetchTransactionRaw(input.trim(), chain),
         fetchTransactionReceipt(input.trim(), chain),
-        fetchEthPrice(),
       ]);
+      const ethPrice = await fetchEthPrice();
+
+      // Fresh transactions appear on public RPC nodes seconds before
+      // Etherscan's indexer — fall back so just-confirmed txs still decode
+      if (!txRaw) txRaw = await rpcGetTransactionRaw(input.trim(), chain);
+      if (!receipt) receipt = await rpcGetTransactionReceipt(input.trim(), chain);
 
       if (!txRaw && !receipt) {
         return NextResponse.json(
-          { error: "Transaction not found. Check the hash and the selected chain — make sure you picked the right network (ETH, Base, Polygon…)." },
+          { error: "We couldn't find this transaction. Double-check you copied the whole ID — it should be 66 characters starting with 0x." },
           { status: 404 }
         );
       }
@@ -177,7 +205,7 @@ export async function POST(req: NextRequest) {
         const valueSpentEth = valueInEth.toFixed(6);
         const valueSpentUsd = (valueInEth * ethPrice).toFixed(2);
 
-        let deployedAddress: string | null = receipt.contractAddress;
+        let deployedAddress: string | null = receipt?.contractAddress ?? null;
 
         const gasUsed: string | null = receipt?.gasUsed
           ? parseInt(receipt.gasUsed, 16).toLocaleString()
@@ -307,7 +335,7 @@ export async function POST(req: NextRequest) {
       // Not a contract creation — reuse txRaw already fetched above
       if (!txRaw) {
         return NextResponse.json(
-          { error: "Transaction not found. Check the hash and the selected chain — make sure you picked the right network (ETH, Base, Polygon…)." },
+          { error: "We couldn't find this transaction. Double-check you copied the whole ID — it should be 66 characters starting with 0x." },
           { status: 404 }
         );
       }

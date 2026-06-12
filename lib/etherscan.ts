@@ -6,6 +6,109 @@ const CHAIN_IDS: Record<string, number> = {
   optimism: 10,
 };
 
+// Priority order doubles as tie-break when something exists on multiple chains
+export const SUPPORTED_CHAINS = ["ethereum", "base", "arbitrum", "polygon", "optimism"] as const;
+
+// Free public RPCs used only for chain detection probes — keeps the bursts of
+// 5 parallel lookups off the Etherscan key's rate limit
+const PUBLIC_RPC: Record<string, string> = {
+  ethereum: "https://ethereum-rpc.publicnode.com",
+  base: "https://base-rpc.publicnode.com",
+  polygon: "https://polygon-bor-rpc.publicnode.com",
+  arbitrum: "https://arbitrum-one-rpc.publicnode.com",
+  optimism: "https://optimism-rpc.publicnode.com",
+};
+
+async function rpcCall(chain: string, method: string, params: unknown[]): Promise<unknown> {
+  const res = await fetch(PUBLIC_RPC[chain], {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    cache: "no-store",
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    signal: (AbortSignal as any).timeout(6000),
+  });
+  const json = await res.json();
+  return json.result ?? null;
+}
+
+/**
+ * Finds which chain a transaction lives on by probing all supported networks
+ * in parallel. Falls back to the Etherscan proxy per chain if the public RPC
+ * probe errors. Returns null when no network knows the hash.
+ */
+export async function findTransactionChain(txHash: string): Promise<string | null> {
+  const probes = SUPPORTED_CHAINS.map(async (chain) => {
+    try {
+      const tx = await rpcCall(chain, "eth_getTransactionByHash", [txHash]);
+      if (tx && typeof tx === "object") return chain;
+    } catch {
+      // RPC unreachable — try Etherscan for this chain instead
+      const fallback = await fetchTransactionRaw(txHash, chain);
+      if (fallback) return chain;
+    }
+    return null;
+  });
+  const results = await Promise.all(probes);
+  return results.find((c): c is (typeof SUPPORTED_CHAINS)[number] => c !== null) ?? null;
+}
+
+/**
+ * RPC fallbacks for very fresh transactions — public nodes see them seconds
+ * before Etherscan's indexer does, so a tx found during chain detection must
+ * still be fetchable even when Etherscan returns nothing.
+ */
+export async function rpcGetTransactionRaw(txHash: string, chain: string): Promise<Record<string, string> | null> {
+  try {
+    const result = await rpcCall(chain, "eth_getTransactionByHash", [txHash]);
+    return result && typeof result === "object" ? (result as Record<string, string>) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function rpcGetTransactionReceipt(txHash: string, chain: string): Promise<{
+  contractAddress: string | null;
+  gasUsed: string | null;
+  from: string | null;
+  blockNumber: string | null;
+} | null> {
+  try {
+    const result = await rpcCall(chain, "eth_getTransactionReceipt", [txHash]);
+    if (result && typeof result === "object") {
+      const r = result as Record<string, string>;
+      return {
+        contractAddress: r.contractAddress ?? null,
+        gasUsed: r.gasUsed ?? null,
+        from: r.from ?? null,
+        blockNumber: r.blockNumber ?? null,
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Finds which chain an address has deployed contract code on. EOAs (regular
+ * wallets) have no code anywhere, in which case this returns null and callers
+ * should treat the address as a wallet on Ethereum.
+ */
+export async function findAddressChain(address: string): Promise<string | null> {
+  const probes = SUPPORTED_CHAINS.map(async (chain) => {
+    try {
+      const code = await rpcCall(chain, "eth_getCode", [address, "latest"]);
+      if (typeof code === "string" && code !== "0x" && code !== "") return chain;
+    } catch {
+      // probe failure on one chain is non-fatal for detection
+    }
+    return null;
+  });
+  const results = await Promise.all(probes);
+  return results.find((c): c is (typeof SUPPORTED_CHAINS)[number] => c !== null) ?? null;
+}
+
 const ETHERSCAN_BASE = "https://api.etherscan.io/v2/api";
 const TIMEOUT_MS = 10000;
 

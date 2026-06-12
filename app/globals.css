@@ -22,8 +22,8 @@
 }
 
 @theme inline {
-  --font-sans: var(--font-exo2);
-  --font-mono: var(--font-ibm-plex-mono);
+  --font-sans: var(--font-schibsted);
+  --font-mono: var(--font-jetbrains-mono);
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -33,14 +33,14 @@ html { background: var(--bg); }
 body {
   background: var(--bg);
   color: var(--text-primary);
-  font-family: var(--font-exo2), 'Exo 2', system-ui, sans-serif;
+  font-family: var(--font-schibsted), 'Schibsted Grotesk', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
 }
 
 /* Display face — headings, one-liners, brand */
 .font-display {
-  font-family: var(--font-syne), 'Syne', system-ui, sans-serif;
+  font-family: var(--font-unbounded), 'Unbounded', system-ui, sans-serif;
 }
 
 /* Grid background, faded toward the edges so it reads as depth, not wallpaper */
@@ -117,7 +117,7 @@ textarea:focus-visible { outline: none; } /* panel border handles focus state */
 select option { background: #0f0f17; color: #f1f0f5; }
 
 /* Mono */
-.font-mono { font-family: var(--font-ibm-plex-mono), 'IBM Plex Mono', monospace; }
+.font-mono { font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace; }
 
 @keyframes float {
   0%, 100% { transform: translateY(0px); }

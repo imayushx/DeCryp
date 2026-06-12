@@ -47,6 +47,31 @@ function truncate(str: string, head = 10, tail = 8) {
   return `${str.slice(0, head)}...${str.slice(-tail)}`;
 }
 
+// Friendly network names — the chain was auto-detected, so tell the user
+// where their transaction was found instead of assuming they knew
+const CHAIN_LABELS: Record<string, { name: string; color: string }> = {
+  ethereum: { name: "Ethereum", color: "#627eea" },
+  base: { name: "Base", color: "#3b82f6" },
+  polygon: { name: "Polygon", color: "#8247e5" },
+  arbitrum: { name: "Arbitrum", color: "#28a0f0" },
+  optimism: { name: "Optimism", color: "#ff4444" },
+};
+
+function ChainBadge({ chain }: { chain: string }) {
+  const c = CHAIN_LABELS[chain] ?? { name: chain, color: "#8a8aa0" };
+  return (
+    <div
+      className="mt-3 inline-flex items-center gap-2 px-3 py-1 rounded-full"
+      style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}
+    >
+      <span className="w-1.5 h-1.5 rounded-full" style={{ background: c.color, boxShadow: `0 0 6px ${c.color}` }} />
+      <span className="text-[10px] font-mono tracking-wider" style={{ color: "var(--text-secondary)" }}>
+        Found on {c.name}
+      </span>
+    </div>
+  );
+}
+
 function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -471,6 +496,7 @@ export default function ResultCard({ decoded, explanation, raw, deployment, onRe
           <div className="px-7 py-7 relative text-center overflow-hidden">
             <div className="absolute inset-0 pointer-events-none" style={{ background: "radial-gradient(ellipse 70% 50% at 50% 0%, rgba(168,85,247,0.06) 0%, transparent 70%)" }} />
             <p className="relative font-display text-2xl font-bold leading-snug tracking-tight" style={{ color: "#f1f0f5", textWrap: "balance" }}>{exp.one_liner}</p>
+            <ChainBadge chain={raw.chain} />
           </div>
         </Panel>
 
@@ -601,6 +627,7 @@ export default function ResultCard({ decoded, explanation, raw, deployment, onRe
           <div className="px-7 py-7 relative text-center overflow-hidden">
             <div className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(ellipse 70% 50% at 50% 0%, ${riskColor}06 0%, transparent 70%)` }} />
             <p className="relative font-display text-2xl font-bold leading-snug tracking-tight" style={{ color: "#f1f0f5", textWrap: "balance" }}>{exp.one_liner}</p>
+            <ChainBadge chain={raw.chain} />
             <div className="mt-3 flex items-center justify-center gap-2">
               <div className="w-1.5 h-1.5 rounded-full" style={{ background: riskColor }} />
               <span className="text-xs font-mono" style={{ color: "var(--text-tertiary)" }}>
@@ -670,6 +697,7 @@ export default function ResultCard({ decoded, explanation, raw, deployment, onRe
         <div className="px-7 py-7 relative text-center overflow-hidden">
           <div className="absolute inset-0 pointer-events-none" style={{ background: "radial-gradient(ellipse 70% 50% at 50% 0%, rgba(74,158,255,0.05) 0%, transparent 70%)" }} />
           <p className="relative font-display text-2xl font-bold leading-snug tracking-tight" style={{ color: "#f1f0f5", textWrap: "balance" }}>{exp.one_liner}</p>
+          <ChainBadge chain={raw.chain} />
         </div>
       </Panel>
 

@@ -4,11 +4,11 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const STEPS = [
-  { text: "Fetching transaction data", detail: "rpc" },
-  { text: "Decoding calldata", detail: "abi" },
-  { text: "Verifying contract", detail: "etherscan" },
-  { text: "Identifying protocol", detail: "registry" },
-  { text: "Analyzing safety", detail: "ai" },
+  { text: "Searching 5 networks for your transaction", detail: "scan" },
+  { text: "Found it — reading the raw data", detail: "rpc" },
+  { text: "Translating machine code into actions", detail: "decode" },
+  { text: "Checking the contract's track record", detail: "trust" },
+  { text: "Writing your plain-English summary", detail: "ai" },
 ];
 
 export default function LoadingTerminal() {

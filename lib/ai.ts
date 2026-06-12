@@ -149,7 +149,10 @@ async function callNvidia(systemPrompt: string, userPrompt: string): Promise<str
     }),
     cache: "no-store",
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    signal: (AbortSignal as any).timeout(55000),
+    // 40s cap: Vercel function limit is 60s total, and chain detection +
+    // Etherscan fetches already use some of it; the decoded-data fallback is
+    // better than a dead request
+    signal: (AbortSignal as any).timeout(40000),
   });
 
   if (!response.ok) {

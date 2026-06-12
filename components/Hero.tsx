@@ -1,15 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-
-const CHAINS = [
-  { value: "ethereum", label: "ETH" },
-  { value: "base", label: "BASE" },
-  { value: "polygon", label: "MATIC" },
-  { value: "arbitrum", label: "ARB" },
-  { value: "optimism", label: "OP" },
-];
 
 export type DetectedType = "txhash" | "address" | "calldata" | "empty";
 
@@ -30,27 +22,27 @@ const TYPE_META: Record<DetectedType, {
   placeholder: string;
 }> = {
   txhash: {
-    badge: "TX HASH",
+    badge: "TRANSACTION ID",
     badgeColor: "#00d4ff",
     badgeBg: "rgba(0,212,255,0.1)",
-    button: "Decode Transaction",
-    helper: "Detected a transaction hash — we'll decode exactly what happened on-chain.",
+    button: "Decode It",
+    helper: "That's a transaction ID. We'll find which network it lives on automatically — nothing else to pick.",
     placeholder: "",
   },
   address: {
-    badge: "CONTRACT / WALLET",
+    badge: "ADDRESS",
     badgeColor: "#a78bfa",
     badgeBg: "rgba(167,139,250,0.1)",
-    button: "Inspect Contract",
-    helper: "Detected a contract address — we'll identify the protocol and assess trustworthiness.",
+    button: "Check This Address",
+    helper: "That's an address. We'll figure out who it belongs to and whether it can be trusted.",
     placeholder: "",
   },
   calldata: {
-    badge: "CALLDATA",
+    badge: "RAW DATA",
     badgeColor: "#00ff88",
     badgeBg: "rgba(0,255,136,0.08)",
     button: "Is This Safe?",
-    helper: "Detected raw calldata — we'll decode what this will do before you sign.",
+    helper: "That's raw transaction data. We'll translate it into plain English before you sign anything.",
     placeholder: "",
   },
   empty: {
@@ -58,21 +50,21 @@ const TYPE_META: Record<DetectedType, {
     badgeColor: "",
     badgeBg: "",
     button: "Decode",
-    helper: "No wallet needed. Nothing is stored or sent anywhere.",
-    placeholder: "Paste a transaction hash, contract address, or calldata hex...",
+    helper: "No wallet connection needed. Nothing you paste is stored or sent anywhere.",
+    placeholder: "Paste a transaction ID or an address here…",
   },
 };
 
 export interface HeroProps {
-  onDecode: (input: string, chain: string, detectedType: DetectedType) => void;
+  onDecode: (input: string, detectedType: DetectedType) => void;
   onDemo: () => void;
   loading: boolean;
 }
 
 export default function Hero({ onDecode, onDemo, loading }: HeroProps) {
   const [input, setInput] = useState("");
-  const [chain, setChain] = useState("ethereum");
   const [focused, setFocused] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const detected = useMemo(() => detectType(input), [input]);
   const meta = TYPE_META[detected];
@@ -80,7 +72,7 @@ export default function Hero({ onDecode, onDemo, loading }: HeroProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (input.trim() && detected !== "empty") {
-      onDecode(input.trim(), chain, detected);
+      onDecode(input.trim(), detected);
     }
   };
 
@@ -92,8 +84,17 @@ export default function Hero({ onDecode, onDemo, loading }: HeroProps) {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (canSubmit) onDecode(input.trim(), chain, detected);
+      if (canSubmit) onDecode(input.trim(), detected);
     }
+  };
+
+  // Cursor-follow glow on the decode panel
+  const handlePanelMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = panelRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    el.style.setProperty("--mx", `${e.clientX - rect.left}px`);
+    el.style.setProperty("--my", `${e.clientY - rect.top}px`);
   };
 
   return (
@@ -116,7 +117,7 @@ export default function Hero({ onDecode, onDemo, loading }: HeroProps) {
               <path d="M8 11V7a4 4 0 018 0v4" stroke="#00ff88" strokeWidth="1.8" strokeLinecap="round"/>
             </svg>
           </div>
-          <span className="font-display font-bold text-[15px] tracking-tight" style={{ color: "#f1f0f5" }}>DeCryp</span>
+          <span className="font-display font-semibold text-[14px] tracking-tight" style={{ color: "#f1f0f5" }}>DeCryp</span>
           <span
             className="text-[9px] font-mono px-1.5 py-0.5 rounded tracking-widest"
             style={{ background: "rgba(0,255,136,0.08)", border: "1px solid rgba(0,255,136,0.2)", color: "#00ff88" }}
@@ -135,23 +136,23 @@ export default function Hero({ onDecode, onDemo, loading }: HeroProps) {
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.7, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
-        className="text-center mt-20 mb-10 px-2"
+        className="text-center mt-16 mb-10 px-2"
       >
         <div className="flex items-center justify-center gap-2 mb-6">
           <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: "#00ff88", boxShadow: "0 0 8px #00ff88" }} />
           <p className="text-[11px] font-mono tracking-[0.2em] uppercase" style={{ color: "var(--text-tertiary)" }}>
-            On-chain Transaction Intelligence
+            Crypto, translated
           </p>
         </div>
-        <h1 className="font-display text-5xl sm:text-[64px] font-bold leading-[1.05] tracking-tight mb-5 max-w-[720px]" style={{ textWrap: "balance" }}>
+        <h1 className="font-display text-4xl sm:text-[52px] font-bold leading-[1.12] tracking-tight mb-6 max-w-[760px]" style={{ textWrap: "balance" }}>
           <span style={{ color: "#f1f0f5" }}>Know what you&apos;re</span>
           <br />
           <span className="text-glow-green" style={{ color: "#00ff88" }}>
             signing.
           </span>
         </h1>
-        <p className="text-base max-w-[420px] mx-auto leading-relaxed" style={{ color: "var(--text-secondary)" }}>
-          Paste anything — tx hash, contract address, or calldata. DeCryp figures out the rest.
+        <p className="text-base max-w-[460px] mx-auto leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+          Copy a transaction ID from your wallet, paste it below, and get a plain-English answer to one question: what does this actually do?
         </p>
       </motion.div>
 
@@ -164,7 +165,9 @@ export default function Hero({ onDecode, onDemo, loading }: HeroProps) {
         className="w-full max-w-[640px]"
       >
         <div
-          className="rounded-2xl overflow-hidden transition-all duration-300"
+          ref={panelRef}
+          onMouseMove={handlePanelMouseMove}
+          className="relative rounded-2xl overflow-hidden transition-all duration-300"
           style={{
             background: "rgba(13,13,20,0.85)",
             backdropFilter: "blur(24px)",
@@ -176,16 +179,25 @@ export default function Hero({ onDecode, onDemo, loading }: HeroProps) {
               : "0 8px 40px rgba(0,0,0,0.4)",
           }}
         >
+          {/* Cursor-follow glow */}
+          <div
+            className="absolute inset-0 pointer-events-none transition-opacity duration-300"
+            style={{
+              opacity: focused ? 1 : 0.55,
+              background: "radial-gradient(220px circle at var(--mx, 50%) var(--my, 50%), rgba(0,255,136,0.06), transparent 70%)",
+            }}
+          />
+
           {/* Terminal title bar */}
           <div
-            className="flex items-center gap-2 px-4 py-2.5"
+            className="relative flex items-center gap-2 px-4 py-2.5"
             style={{ borderBottom: "1px solid rgba(255,255,255,0.05)", background: "rgba(255,255,255,0.02)" }}
           >
             <div className="w-2.5 h-2.5 rounded-full" style={{ background: "#ef4444", opacity: 0.6 }} />
             <div className="w-2.5 h-2.5 rounded-full" style={{ background: "#f59e0b", opacity: 0.6 }} />
             <div className="w-2.5 h-2.5 rounded-full" style={{ background: "#00ff88", opacity: 0.6 }} />
             <span className="ml-3 text-[10px] font-mono tracking-wider" style={{ color: "var(--text-tertiary)" }}>
-              decryp — universal decoder
+              decryp — paste anything
             </span>
             <div className="ml-auto flex items-center gap-1.5">
               <div
@@ -193,13 +205,13 @@ export default function Hero({ onDecode, onDemo, loading }: HeroProps) {
                 style={{ background: loading ? "#f59e0b" : "#00ff88", boxShadow: `0 0 6px ${loading ? "#f59e0b" : "#00ff88"}` }}
               />
               <span className="text-[9px] font-mono tracking-widest" style={{ color: loading ? "#f59e0b" : "#00ff88" }}>
-                {loading ? "BUSY" : "READY"}
+                {loading ? "WORKING" : "READY"}
               </span>
             </div>
           </div>
 
           {/* Detection badge row */}
-          <div className="px-4 pt-3 pb-0 flex items-center gap-2 min-h-[28px]">
+          <div className="relative px-4 pt-3 pb-0 flex items-center gap-2 min-h-[28px]">
             <AnimatePresence mode="wait">
               {detected !== "empty" && (
                 <motion.div
@@ -251,32 +263,24 @@ export default function Hero({ onDecode, onDemo, loading }: HeroProps) {
             onBlur={() => setFocused(false)}
             placeholder={TYPE_META.empty.placeholder}
             rows={3}
-            className="w-full bg-transparent px-4 pt-2 pb-3 font-mono text-sm resize-none focus:outline-none leading-relaxed"
+            className="relative w-full bg-transparent px-4 pt-2 pb-3 font-mono text-sm resize-none focus:outline-none leading-relaxed"
             style={{ color: "#f1f0f5", caretColor: "#00ff88" }}
           />
 
           {/* Bottom bar */}
           <div
-            className="px-3 pb-2 pt-1 flex items-center gap-2 flex-wrap"
+            className="relative px-4 pb-3 pt-2.5 flex items-center gap-3 flex-wrap"
             style={{ borderTop: "1px solid rgba(255,255,255,0.04)" }}
           >
-            {/* Chain pills */}
-            <div className="flex items-center gap-1.5 flex-1 flex-wrap">
-              {CHAINS.map((c) => (
-                <button
-                  key={c.value}
-                  type="button"
-                  onClick={() => setChain(c.value)}
-                  className="text-[10px] font-mono px-2.5 py-1 rounded-lg transition-all duration-200"
-                  style={
-                    chain === c.value
-                      ? { background: "rgba(0,255,136,0.12)", border: "1px solid rgba(0,255,136,0.3)", color: "#00ff88" }
-                      : { background: "transparent", border: "1px solid rgba(255,255,255,0.07)", color: "var(--text-tertiary)" }
-                  }
-                >
-                  {c.label}
-                </button>
-              ))}
+            {/* Auto network detection note — replaces the old chain picker */}
+            <div className="flex items-center gap-2 flex-1 min-w-[180px]">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" className="shrink-0">
+                <circle cx="11" cy="11" r="7" stroke="#00d4ff" strokeWidth="2"/>
+                <path d="M20 20l-3-3" stroke="#00d4ff" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+              <span className="text-[10px] font-mono leading-snug" style={{ color: "var(--text-tertiary)" }}>
+                Network detected automatically — you don&apos;t have to know it
+              </span>
             </div>
 
             {/* Submit */}
@@ -297,7 +301,7 @@ export default function Hero({ onDecode, onDemo, loading }: HeroProps) {
                   <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
                     <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="30 60" />
                   </svg>
-                  Analyzing
+                  Working…
                 </>
               ) : (
                 <>
@@ -331,7 +335,7 @@ export default function Hero({ onDecode, onDemo, loading }: HeroProps) {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
               className="text-[11px] font-mono leading-relaxed"
-              style={{ color: "var(--text-tertiary)", maxWidth: "380px" }}
+              style={{ color: "var(--text-tertiary)", maxWidth: "400px" }}
             >
               {meta.helper}
             </motion.p>
@@ -339,18 +343,18 @@ export default function Hero({ onDecode, onDemo, loading }: HeroProps) {
           <button
             type="button"
             onClick={onDemo}
-            className="shrink-0 flex items-center gap-1.5 text-[11px] font-mono transition-colors"
+            className="shrink-0 flex items-center gap-1.5 text-[11px] font-mono transition-colors duration-200 hover:text-[#00ff88]"
             style={{ color: "var(--text-secondary)" }}
           >
             <svg width="9" height="9" viewBox="0 0 24 24" fill="none">
               <path d="M5 3l14 9-14 9V3z" fill="currentColor"/>
             </svg>
-            Try Example
+            Show me an example
           </button>
         </div>
       </motion.form>
 
-      {/* Feature strip */}
+      {/* How it works — for people who have never done this */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -359,28 +363,28 @@ export default function Hero({ onDecode, onDemo, loading }: HeroProps) {
       >
         {[
           {
-            label: "Any Input",
-            sub: "Hash · Address · Calldata",
+            label: "1 · Copy",
+            sub: "Grab the long 0x… ID from your wallet's activity tab",
             icon: (
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-                <path d="M4 7V5a1 1 0 011-1h2M17 4h2a1 1 0 011 1v2M20 17v2a1 1 0 01-1 1h-2M7 20H5a1 1 0 01-1-1v-2" stroke="#00d4ff" strokeWidth="1.8" strokeLinecap="round"/>
-                <path d="M8 12h8" stroke="#00d4ff" strokeWidth="1.8" strokeLinecap="round"/>
+                <rect x="9" y="9" width="11" height="11" rx="2" stroke="#00d4ff" strokeWidth="1.8"/>
+                <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="#00d4ff" strokeWidth="1.8" strokeLinecap="round"/>
               </svg>
             ),
           },
           {
-            label: "Risk Score",
-            sub: "LOW → DANGER, instantly",
+            label: "2 · Paste",
+            sub: "We find the network and decode it for you",
             icon: (
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-                <path d="M12 3l8 4v5c0 4.5-3.2 7.6-8 9-4.8-1.4-8-4.5-8-9V7l8-4z" stroke="#00ff88" strokeWidth="1.8" strokeLinejoin="round"/>
-                <path d="M9 12l2 2 4-4" stroke="#00ff88" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                <circle cx="11" cy="11" r="7" stroke="#00ff88" strokeWidth="1.8"/>
+                <path d="M20 20l-3-3" stroke="#00ff88" strokeWidth="1.8" strokeLinecap="round"/>
               </svg>
             ),
           },
           {
-            label: "Plain English",
-            sub: "No jargon, no confusion",
+            label: "3 · Understand",
+            sub: "Plain English, with a clear risk verdict",
             icon: (
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
                 <path d="M21 12a8 8 0 01-8 8H4l1.5-3A8 8 0 1121 12z" stroke="#a78bfa" strokeWidth="1.8" strokeLinejoin="round"/>
@@ -389,7 +393,7 @@ export default function Hero({ onDecode, onDemo, loading }: HeroProps) {
             ),
           },
         ].map((item, i) => (
-          <div key={i} className="flex flex-col items-center gap-1.5 text-center">
+          <div key={i} className="flex flex-col items-center gap-1.5 text-center max-w-[180px]">
             <div
               className="w-8 h-8 rounded-lg flex items-center justify-center mb-0.5"
               style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}
@@ -397,7 +401,7 @@ export default function Hero({ onDecode, onDemo, loading }: HeroProps) {
               {item.icon}
             </div>
             <span className="text-xs font-semibold" style={{ color: "#f1f0f5" }}>{item.label}</span>
-            <span className="text-[10px] font-mono" style={{ color: "var(--text-tertiary)" }}>{item.sub}</span>
+            <span className="text-[10px] font-mono leading-snug" style={{ color: "var(--text-tertiary)" }}>{item.sub}</span>
           </div>
         ))}
       </motion.div>
@@ -437,7 +441,7 @@ export default function Hero({ onDecode, onDemo, loading }: HeroProps) {
         </span>
         <div className="flex items-center gap-4">
           <span className="text-[10px] font-mono" style={{ color: "var(--text-tertiary)" }}>
-            ETH · BASE · MATIC · ARB · OP
+            Works on 5 networks
           </span>
           <a
             href="https://github.com/imayushx/DeCryp"
